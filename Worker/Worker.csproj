@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk.Worker">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UserSecretsId>dotnet-Worker-d82512a5-1a1b-4ef6-8c5c-d78069c15fcd</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Docker.DotNet" Version="3.125.15" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.12" />
+    <PackageReference Include="Microsoft.Extensions.Http" Version="10.0.3" />
+  </ItemGroup>
+</Project>
