@@ -20,11 +20,16 @@ public class ServiceWorker : BackgroundService
     {
         while (!stoppingToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Worker start");
-
-            await _processService.Process();
-
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            try
+            {
+                _logger.LogInformation("Worker start");
+                await _processService.Process();
+                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            }
+            catch(Exception ex)
+            {
+                _logger.LogError(ex, "Error in worker loop");
+            }
         }
     }
 }
