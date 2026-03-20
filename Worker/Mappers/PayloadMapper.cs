@@ -63,10 +63,10 @@ namespace Worker.Mappers
                 ref_po_no = t.ApTransaction.ref_po_no,
                 ref_gr_no_by_in = t.ApTransaction.ref_gr_no_by_in,
                 curr_code = t.ApTransaction.curr_code,
-                pre_curr_amt = Math.Round(currAmt.Value / (1 + vatRate), 2),
+                pre_curr_amt = currAmt,
                 curr_amt = currAmt,
                 exchange_rate = t.ApTransaction.exchange_rate,
-                local_amt = currAmt * t.ApTransaction.exchange_rate,
+                local_amt = currAmt,
                 remark = t.ApTransaction.remark,
                 is_manual_acc = (t.ApTransactionAcc?.Any() == true) ? "TRUE" : "FALSE",
                 cr_by = "API",
@@ -85,7 +85,7 @@ namespace Worker.Mappers
                     div_code = "PTL",
                     ou_det = "00000",
                     curr_amt = s.curr_amt,
-                    local_amt = currAmt * t.ApTransaction.exchange_rate,
+                    local_amt = currAmt,
                     note = ""
                 }).ToList() ?? new();
 
