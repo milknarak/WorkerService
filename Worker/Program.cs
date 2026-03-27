@@ -33,24 +33,24 @@ builder.Services.AddHttpClient<PocketbaseService>()
     };
 });
 
+builder.Services.AddHttpClient<SapService>();
 builder.Services.AddScoped<TransactionService>();
-builder.Services.AddScoped<SapService>();
 builder.Services.AddScoped<ProcessService>();
 
-//builder.Services.AddHostedService<ServiceWorker>();
-
-var host = builder.Build();
-
-var settings = host.Services.GetRequiredService<IOptions<AppSettings>>().Value;
+var settings = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
 
 if (settings.DebugRunOnce)
 {
+    var host = builder.Build();
+
     using var scope = host.Services.CreateScope();
     var process = scope.ServiceProvider.GetRequiredService<ProcessService>();
-
     await process.Process();
 }
 else
 {
+    builder.Services.AddHostedService<ServiceWorker>();
+
+    var host = builder.Build();
     host.Run();
 }

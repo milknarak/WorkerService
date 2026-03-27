@@ -1,0 +1,15 @@
+services:
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      - DOTNET_ENVIRONMENT=Production
+      - AppSettings__DebugRunOnce=false
+      - AppSettings__PocketbaseUrl=https://5a1679bd-bf69-4c0c-bdf4-338eb91f6601.pocketbase.barbarian.ldrive.io
+      - AppSettings__PocketbaseUser=5a1679bd-bf69-4c0c-bdf4-338eb91f6601@ztrus.io
+      - AppSettings__PocketbasePassword=1EWM2cTOiRWLiZmN50CNjBzYtIGZmRTLzMDOlJWOxYmN2ATMsRmcpZXZ
+      - AppSettings__ApEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertApTransaction
+      - AppSettings__ArEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertArTransaction
+      - AppSettings__IntervalMinutes=5

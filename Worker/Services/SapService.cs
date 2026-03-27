@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http.Json;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Net.Http.Json;
+using Microsoft.Extensions.Options;
+using Worker.Config;
 using Worker.Models;
 
 namespace Worker.Services
@@ -11,13 +8,13 @@ namespace Worker.Services
     public class SapService
     {
         private readonly HttpClient _http;
-        private readonly IConfiguration _config;
+        private readonly AppSettings _settings;
         private readonly ILogger<SapService> _logger;
 
-        public SapService(HttpClient http, IConfiguration config, ILogger<SapService> logger)
+        public SapService(HttpClient http, IOptions<AppSettings> settings, ILogger<SapService> logger)
         {
             _http = http;
-            _config = config;
+            _settings = settings.Value;
             _logger = logger;
         }
 
@@ -25,8 +22,8 @@ namespace Worker.Services
         {
             var endpoint = type switch
             {
-                "AP" => _config["AppSettings:ApEndpoint"],
-                "AR" => _config["AppSettings:ArEndpoint"],
+                "AP" => _settings.ApEndpoint,
+                "AR" => _settings.ArEndpoint,
                 _ => throw new Exception($"Unknown transaction type: {type}")
             };
 

@@ -1,19 +1,23 @@
+using Microsoft.Extensions.Options;
+using Worker.Config;
 using Worker.Services;
-using Worker.Mappers;
 
 namespace Worker;
 
 public class ServiceWorker : BackgroundService
 {
     private readonly ILogger<ServiceWorker> _logger;
-    private readonly ProcessService _processService;
+    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly AppSettings _settings;
 
     public ServiceWorker(
         ILogger<ServiceWorker> logger,
-        ProcessService processService)
+        IServiceScopeFactory scopeFactory,
+        IOptions<AppSettings> settings)
     {
         _logger = logger;
-        _processService = processService;
+        _scopeFactory = scopeFactory;
+        _settings = settings.Value;
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -23,12 +27,21 @@ public class ServiceWorker : BackgroundService
             try
             {
                 _logger.LogInformation("Worker start");
-                await _processService.Process();
-                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+
+                using var scope = _scopeFactory.CreateScope();
+                var processService = scope.ServiceProvider.GetRequiredService<ProcessService>();
+                await processService.Process();
+
+                await Task.Delay(TimeSpan.FromMinutes(_settings.IntervalMinutes), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
             catch(Exception ex)
             {
                 _logger.LogError(ex, "Error in worker loop");
+                await Task.Delay(TimeSpan.FromSeconds(30), stoppingToken);
             }
         }
     }

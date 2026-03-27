@@ -85,7 +85,7 @@ namespace Worker.Mappers
                     div_code = "PTL",
                     ou_det = "00000",
                     curr_amt = s.curr_amt,
-                    local_amt = currAmt,
+                    local_amt = s.curr_amt,
                     note = ""
                 }).ToList() ?? new();
 
