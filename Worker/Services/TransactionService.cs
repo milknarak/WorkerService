@@ -19,8 +19,6 @@ namespace Worker.Services
 
         public async Task<List<TransactionGroup>> GetPendingGroups()
         {
-            await _pb.Authenticate();
-
             return await _pb.GetPendingGroups();
         }
 
@@ -28,35 +26,39 @@ namespace Worker.Services
         {
             if (type == "AP")
             {
-                var ap = await _pb.GetApTransaction(groupId);
-                var sub = await _pb.GetApSubTransaction(groupId);
-                var tax = await _pb.GetApTransactionPurcTax(groupId);
-                var acc = await _pb.GetApTransactionAcc(groupId);
+                var apTask = _pb.GetApTransaction(groupId);
+                var subTask = _pb.GetApSubTransaction(groupId);
+                var taxTask = _pb.GetApTransactionPurcTax(groupId);
+                var accTask = _pb.GetApTransactionAcc(groupId);
+
+                await Task.WhenAll(apTask, subTask, taxTask, accTask);
 
                 return new TransactionAggregate
                 {
-                    ApTransaction = ap,
-                    ApSubTransaction = sub,
-                    ApTransactionPurcTax = tax,
-                    ApTransactionAcc = acc
+                    ApTransaction = apTask.Result,
+                    ApSubTransaction = subTask.Result,
+                    ApTransactionPurcTax = taxTask.Result,
+                    ApTransactionAcc = accTask.Result
                 };
             }
 
             if (type == "AR")
             {
-                var ar = await _pb.GetArTransaction(groupId);
-                var sub = await _pb.GetArSubTransaction(groupId);
-                var acc = await _pb.GetArTransactionAcc(groupId);
+                var arTask = _pb.GetArTransaction(groupId);
+                var subTask = _pb.GetArSubTransaction(groupId);
+                var accTask = _pb.GetArTransactionAcc(groupId);
+
+                await Task.WhenAll(arTask, subTask, accTask);
 
                 return new TransactionAggregate
                 {
-                    ArTransaction = ar,
-                    ArSubTransaction = sub,
-                    ArTransactionAcc = acc
+                    ArTransaction = arTask.Result,
+                    ArSubTransaction = subTask.Result,
+                    ArTransactionAcc = accTask.Result
                 };
             }
 
-            throw new Exception($"Unknown type {type}");
+            throw new ArgumentOutOfRangeException(nameof(type), $"Unknown type {type}");
         }
 
         public async Task MarkAsSent(string id)

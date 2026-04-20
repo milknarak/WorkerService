@@ -1,6 +1,8 @@
 ﻿using System.Net.Http.Json;
+using System.Text.Json;
 using Microsoft.Extensions.Options;
 using Worker.Config;
+using Worker.Helpers;
 using Worker.Models;
 
 namespace Worker.Services
@@ -24,7 +26,7 @@ namespace Worker.Services
             {
                 "AP" => _settings.ApEndpoint,
                 "AR" => _settings.ArEndpoint,
-                _ => throw new Exception($"Unknown transaction type: {type}")
+                _ => throw new ArgumentOutOfRangeException(nameof(type), $"Unknown transaction type: {type}")
             };
 
             var response = await _http.PostAsJsonAsync(endpoint, payload);
@@ -37,9 +39,28 @@ namespace Worker.Services
                 return false;
             }
 
-            if (body.Contains("\"processStatus\":\"error\""))
+            SapResponse? parsed;
+            try
             {
-                _logger.LogWarning("Business Error : {Body}", body);
+                parsed = JsonSerializer.Deserialize<SapResponse>(body, JsonHelper.Options);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "Failed to parse SAP response: {Body}", body);
+                return false;
+            }
+
+            if (!string.Equals(parsed?.responseApi?.statusCode, "200", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("SAP API Error {StatusCode} {StatusDesc} : {Body}",
+                    parsed?.responseApi?.statusCode, parsed?.responseApi?.statusDesc, body);
+                return false;
+            }
+
+            if (string.Equals(parsed?.responseRefData?.processStatus, "error", StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("SAP Business Error : {ErrMsg} | Body : {Body}",
+                    parsed?.responseRefData?.processErrMsg, body);
                 return false;
             }
 

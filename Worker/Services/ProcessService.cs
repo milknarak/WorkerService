@@ -11,13 +11,12 @@ namespace Worker.Services
     {
         private readonly TransactionService _transactionService;
         private readonly SapService _sapService;
-        private readonly ILogger<SapService> _logger;
-
+        private readonly ILogger<ProcessService> _logger;
 
         public ProcessService(
             TransactionService transactionService,
             SapService sapService,
-            ILogger<SapService> logger)
+            ILogger<ProcessService> logger)
         {
             _transactionService = transactionService;
             _sapService = sapService;
