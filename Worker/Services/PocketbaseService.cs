@@ -109,44 +109,24 @@ namespace Worker.Services
             return result?.items ?? new List<TransactionGroup>();
         }
 
-        public async Task<ApTransaction?> GetApTransaction(string groupId)
+        public async Task<ApTransactionRecord?> GetApTransaction(string groupId)
         {
             using var res = await SendAsync(() => _http.GetAsync(
                 $"/api/collections/ap_transactions/records?filter=group_id='{groupId}'"));
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransaction>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransactionRecord>>(JsonHelper.Options);
 
             return result?.items?.FirstOrDefault();
         }
 
-        public async Task<List<ApSubTransaction>> GetApSubTransaction(string groupId)
+        public async Task<List<ApSubTransactionRecord>> GetApSubTransaction(string groupId)
         {
             using var res = await SendAsync(() => _http.GetAsync(
                 $"/api/collections/ap_sub_transactions/records?filter=group_id='{groupId}'"));
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApSubTransaction>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApSubTransactionRecord>>(JsonHelper.Options);
 
-            return result?.items ?? new List<ApSubTransaction>();
-        }
-
-        public async Task<List<ApTransactionPurcTax>> GetApTransactionPurcTax(string groupId)
-        {
-            using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ap_transaction_purc_taxes/records?filter=group_id='{groupId}'"));
-
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransactionPurcTax>>(JsonHelper.Options);
-
-            return result?.items ?? new List<ApTransactionPurcTax>();
-        }
-
-        public async Task<List<ApTransactionAcc>> GetApTransactionAcc(string groupId)
-        {
-            using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ap_transaction_accs/records?filter=group_id='{groupId}'"));
-
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransactionAcc>>(JsonHelper.Options);
-
-            return result?.items ?? new List<ApTransactionAcc>();
+            return result?.items ?? new List<ApSubTransactionRecord>();
         }
 
         public async Task<ArTransaction?> GetArTransaction(string groupId)

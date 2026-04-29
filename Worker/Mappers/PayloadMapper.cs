@@ -1,29 +1,30 @@
-﻿using Worker.Aggregates;
+using Worker.Aggregates;
 using Worker.Models;
 
 namespace Worker.Mappers
 {
     public static class PayloadMapper
     {
-        private static readonly Dictionary<(string subType, string localType), string> RevExpMap = new()
+        private static readonly Dictionary<string, (string Debit, string Credit)> AccountMap = new()
         {
-            { ("ap_tax", ""), "1342.001" },
-            { ("ap_tax_okc", ""), "1342.002" },
-            { ("ap_tax_omp", ""), "1660.001" },
-            { ("ap_road", ""), "1342.003" },
-            { ("ap_fund", ""), "1342.004" },
-            { ("ap_shipping", ""), "1342.006" },
-            { ("ap_chemical_dosing", ""), "1342.012" },
-            { ("ap_lab_test", ""), "1342.009" },
-            { ("ap_fuel", ""), "1370.001" },
-            { ("ap_transport", "L"), "1342.005" },
-            { ("ap_transport", "O"), "1342.005" }
+            { "ap_tax",             ("1342.001", "4370.001") },
+            { "ap_tax_okc",         ("1342.002", "4370.001") },
+            { "ap_tax_omp",         ("1660.001", "4370.001") },
+            { "ap_road",            ("1342.003", "4370.001") },
+            { "ap_fund",            ("1342.004", "4370.001") },
+            { "ap_shipping",        ("1342.006", "4370.001") },
+            { "ap_chemical_dosing", ("1342.012", "4370.001") },
+            { "ap_lab_test",        ("1342.009", "4370.001") },
+            { "ap_fuel",            ("1370.001", "4011.001") },
+            { "ap_transport",       ("1342.005", "4021.001") },
+            { "ap_other",           ("1342.005", "4022.001") },
+            { "ap_debit_note",      ("1480.002", "7862.001") }
         };
 
-        public static SapPayload Map(TransactionAggregate t, string type, string subType)
+        public static SapPayload Map(TransactionAggregate t, string type)
         {
             if (type.Equals("AP", StringComparison.OrdinalIgnoreCase))
-                return MapAP(t, subType);
+                return MapAP(t);
 
             if (type.Equals("AR", StringComparison.OrdinalIgnoreCase))
                 return MapAR(t);
@@ -31,44 +32,44 @@ namespace Worker.Mappers
             throw new Exception($"Unknown transaction type: {type}");
         }
 
-        private static SapPayload MapAP(TransactionAggregate t, string subType)
+        private static SapPayload MapAP(TransactionAggregate t)
         {
-            var payload = new SapPayload();
+            var header = t.ApTransaction;
+            var subs = t.ApSubTransaction ?? new List<ApSubTransactionRecord>();
             var today = DateTime.Today;
 
-            decimal? currAmt = t.ApTransaction.curr_amt;
-            decimal vatRate = 0.10m; // 10%
+            var apTransaction = BuildApHeader(header, today);
+            apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
+            apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
+            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today);
 
+            return new SapPayload { apTransaction = apTransaction };
+        }
 
-            if (subType == "ap_transport" && currAmt.HasValue)
-            {
-                currAmt = Math.Round(currAmt.Value / (1 + vatRate), 2);
-            }
-
-            var revExpCode = GetRevExpCode(subType, t.ApTransaction.local_type);
-
-            payload.apTransaction = new ApTransaction
+        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime today)
+        {
+            return new ApTransaction
             {
                 ou_code = "PTL",
                 system_id = "API",
-                local_type = t.ApTransaction.local_type,
+                local_type = h.local_type,
                 doc_type = "IV",
-                ap_code = t.ApTransaction.vendor_code,
+                ap_code = h.vendor_code,
                 tran_date = today,
-                credit_code = t.ApTransaction.credit_code,
-                due_date = t.ApTransaction.due_date ?? today.AddDays(30),
-                ref_inv_no = t.ApTransaction.ref_inv_no,
-                ref_inv_date = t.ApTransaction.ref_inv_date ?? today,
-                ref_doc_no = t.ApTransaction.ref_doc_no,
-                ref_po_no = t.ApTransaction.ref_po_no,
-                ref_gr_no_by_in = t.ApTransaction.ref_gr_no_by_in,
-                curr_code = t.ApTransaction.curr_code,
-                pre_curr_amt = currAmt,
-                curr_amt = currAmt,
-                exchange_rate = t.ApTransaction.exchange_rate,
-                local_amt = currAmt,
-                remark = t.ApTransaction.remark,
-                is_manual_acc = (t.ApTransactionAcc?.Any() == true) ? "TRUE" : "FALSE",
+                credit_code = "",
+                due_date = h.due_date ?? today.AddDays(30),
+                ref_inv_no = h.ref_inv_no,
+                ref_inv_date = h.ref_inv_date ?? today,
+                ref_doc_no = h.ref_doc_no,
+                ref_po_no = h.ref_po_no,
+                ref_gr_no_by_in = h.ref_gr_no_by_in,
+                curr_code = h.curr_code,
+                pre_curr_amt = h.pre_curr_amt,
+                curr_amt = h.curr_amt,
+                exchange_rate = h.exchange_rate,
+                local_amt = h.curr_amt,
+                remark = "",
+                is_manual_acc = "TRUE",
                 cr_by = "API",
                 cr_date = DateTime.Now,
                 prog_id = "API_PROCESS",
@@ -76,58 +77,88 @@ namespace Worker.Mappers
                 upd_date = DateTime.Now,
                 upd_prog_id = "API_PROCESS"
             };
+        }
 
-            payload.apTransaction.apSubTransaction =
-                t.ApSubTransaction?.Select(s => new ApSubTransaction
+        private static ApSubTransaction BuildApLineItem(ApSubTransactionRecord s)
+        {
+            var (debit, _) = GetAccounts(s.sub_group_type);
+
+            return new ApSubTransaction
+            {
+                tran_seq = s.seq,
+                rev_exp_code = debit,
+                div_code = "PTL",
+                ou_det = "00000",
+                curr_amt = s.curr_amt,
+                local_amt = s.local_amt,
+                note = s.remark ?? ""
+            };
+        }
+
+        private static List<ApTransactionAcc> BuildApAccountingEntries(List<ApSubTransactionRecord> subs)
+        {
+            var entries = new List<ApTransactionAcc>();
+            var seq = 1;
+
+            foreach (var s in subs)
+            {
+                var (debit, credit) = GetAccounts(s.sub_group_type);
+
+                entries.Add(new ApTransactionAcc
                 {
-                    tran_seq = s.seq,
-                    rev_exp_code = revExpCode,
+                    acc_seq = seq++,
+                    acc_code = debit,
                     div_code = "PTL",
                     ou_det = "00000",
-                    curr_amt = s.curr_amt,
-                    local_amt = s.curr_amt,
-                    note = ""
-                }).ToList() ?? new();
+                    dr_amt = s.curr_amt,
+                    cr_amt = 0
+                });
 
-            payload.apTransaction.apTransactionPurcTax =
-                t.ApTransactionPurcTax?.Select(x => new ApTransactionPurcTax
+                entries.Add(new ApTransactionAcc
                 {
-                    purc_seq = x.seq,
+                    acc_seq = seq++,
+                    acc_code = credit,
+                    div_code = "PTL",
+                    ou_det = "00000",
+                    dr_amt = 0,
+                    cr_amt = s.curr_amt
+                });
+            }
+
+            return entries;
+        }
+
+        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today)
+        {
+            if (string.IsNullOrWhiteSpace(h.tax_id))
+                return new List<ApTransactionPurcTax>();
+
+            return new List<ApTransactionPurcTax>
+            {
+                new ApTransactionPurcTax
+                {
+                    purc_seq = 1,
                     branch_code = "00000",
-                    tax_id = x.tax_id,
+                    tax_id = h.tax_id,
                     branch_yn = "",
-                    branch_name = x.branch_name,
+                    branch_name = "",
                     tax_status = "N",
                     purc_type = "IV",
                     purc_code = "P07-01",
-                    purc_tax_no = x.purc_tax_no,
-                    purc_tax_date = x.purc_tax_date ?? today,
-                    vat_rate = x.vat_rate,
-                    vat_amt = x.vat_amt,
-                    total_amt = x.total_amt
-                }).ToList() ?? new();
-
-            payload.apTransaction.apTransactionAcc =
-                t.ApTransactionAcc?.Select(a => new ApTransactionAcc
-                {
-                    acc_seq = a.seq,
-                    acc_code = a.acc_code,
-                    div_code = "PTL",
-                    ou_det = "00000",
-                    dr_amt = a.dr_amt,
-                    cr_amt = a.cr_amt
-                }).ToList() ?? new();
-
-            return payload;
+                    purc_tax_no = h.ref_inv_no,
+                    purc_tax_date = h.ref_inv_date ?? today,
+                    vat_rate = 0,
+                    vat_amt = 0,
+                    total_amt = h.curr_amt ?? 0
+                }
+            };
         }
 
-        private static string GetRevExpCode(string subType, string localType)
+        private static (string Debit, string Credit) GetAccounts(string subGroupType)
         {
-            var key = (subType, localType ?? "");
-
-            return RevExpMap.TryGetValue(key, out var code)
-                ? code
-                : "";
+            return AccountMap.TryGetValue(subGroupType ?? "", out var pair)
+                ? pair
+                : ("", "");
         }
 
         private static SapPayload MapAR(TransactionAggregate t)

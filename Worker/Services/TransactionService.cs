@@ -28,17 +28,13 @@ namespace Worker.Services
             {
                 var apTask = _pb.GetApTransaction(groupId);
                 var subTask = _pb.GetApSubTransaction(groupId);
-                var taxTask = _pb.GetApTransactionPurcTax(groupId);
-                var accTask = _pb.GetApTransactionAcc(groupId);
 
-                await Task.WhenAll(apTask, subTask, taxTask, accTask);
+                await Task.WhenAll(apTask, subTask);
 
                 return new TransactionAggregate
                 {
                     ApTransaction = apTask.Result,
-                    ApSubTransaction = subTask.Result,
-                    ApTransactionPurcTax = taxTask.Result,
-                    ApTransactionAcc = accTask.Result
+                    ApSubTransaction = subTask.Result
                 };
             }
 

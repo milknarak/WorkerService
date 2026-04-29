@@ -39,7 +39,7 @@ namespace Worker.Services
                 {
                     var data = await _transactionService.GetTransaction(g.group_id, g.type);
 
-                    var payload = PayloadMapper.Map(data, g.type, g.sub_type);
+                    var payload = PayloadMapper.Map(data, g.type);
 
                     var success = await _sapService.Send(payload, g.type);
 
