@@ -42,15 +42,13 @@ namespace Worker.Services
             {
                 var arTask = _pb.GetArTransaction(groupId);
                 var subTask = _pb.GetArSubTransaction(groupId);
-                var accTask = _pb.GetArTransactionAcc(groupId);
 
-                await Task.WhenAll(arTask, subTask, accTask);
+                await Task.WhenAll(arTask, subTask);
 
                 return new TransactionAggregate
                 {
                     ArTransaction = arTask.Result,
-                    ArSubTransaction = subTask.Result,
-                    ArTransactionAcc = accTask.Result
+                    ArSubTransaction = subTask.Result
                 };
             }
 

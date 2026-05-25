@@ -7,8 +7,7 @@ namespace Worker.Aggregates
         public ApTransactionRecord ApTransaction { get; set; }
         public List<ApSubTransactionRecord> ApSubTransaction { get; set; }
 
-        public ArTransaction ArTransaction { get; set; }
-        public List<ArSubTransaction> ArSubTransaction { get; set; }
-        public List<ArTransactionAcc> ArTransactionAcc { get; set; }
+        public ArTransactionRecord ArTransaction { get; set; }
+        public List<ArSubTransactionRecord> ArSubTransaction { get; set; }
     }
 }

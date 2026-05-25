@@ -161,56 +161,113 @@ namespace Worker.Mappers
                 : ("", "");
         }
 
+        private const string AR_RECEIVABLE_ACC = "1210.001";
+        private const string AR_REVENUE_ACC = "7070.001";
+        private const string AR_VAT_ACC = "4320.001";
+        private const decimal VAT_RATE = 0.10m;
+
         private static SapPayload MapAR(TransactionAggregate t)
         {
-            var payload = new SapPayload();
+            var header = t.ArTransaction;
+            var subs = t.ArSubTransaction ?? new List<ArSubTransactionRecord>();
             var today = DateTime.Today;
 
-            payload.arTransaction = new ArTransaction
+            var arTransaction = BuildArHeader(header, today);
+            arTransaction.arSubTransaction = subs.Select(BuildArLineItem).ToList();
+            arTransaction.arTransactionAcc = BuildArAccountingEntries(header, subs);
+
+            return new SapPayload { arTransaction = arTransaction };
+        }
+
+        private static ArTransaction BuildArHeader(ArTransactionRecord h, DateTime today)
+        {
+            return new ArTransaction
             {
                 ou_code = "PTL",
-                ar_code = t.ArTransaction.vendor_code,
-                tran_date = t.ArTransaction.tran_date ?? today,
+                ar_code = h.vendor_code,
+                tran_date = today,
                 credit_code = "CR000",
-                due_date = t.ArTransaction.due_date ?? today.AddDays(30),
-                ref_doc_no = t.ArTransaction.ref_doc_no,
-                ref_doc_date = t.ArTransaction.ref_doc_date,
-                curr_code = "THB",
-                exchange_rate = t.ArTransaction.exchange_rate,
-                curr_amt = t.ArTransaction.curr_amt,
-                local_amt = t.ArTransaction.local_amt,
-                vat_amt = t.ArTransaction.vat_amt,
-                remark = t.ArTransaction.remark,
+                due_date = h.due_date ?? today.AddDays(30),
+                ref_doc_no = h.ref_doc_no,
+                ref_doc_date = h.ref_doc_date ?? today,
+                curr_code = h.curr_code,
+                exchange_rate = h.exchange_rate,
+                curr_amt = h.curr_amt,
+                local_amt = h.curr_amt,
+                vat_amt = null,
+                remark = "",
                 system_id = "AR",
                 branch_code = "00000",
-                is_manual_acc = (t.ArTransactionAcc?.Any() == true) ? "TRUE" : "FALSE",
+                is_manual_acc = "TRUE",
                 cr_by = "API",
                 prog_id = "API"
             };
+        }
 
-            payload.arTransaction.arSubTransaction =
-                t.ArSubTransaction?.Select(s => new ArSubTransaction
+        private static ArSubTransaction BuildArLineItem(ArSubTransactionRecord s)
+        {
+            return new ArSubTransaction
+            {
+                tran_seq = s.seq,
+                rev_exp_code = AR_REVENUE_ACC,
+                div_code = "PTL",
+                ou_det = "00000",
+                curr_amt = s.curr_amt,
+                local_amt = s.curr_amt,
+                note = s.remark ?? ""
+            };
+        }
+
+        private static List<ArTransactionAcc> BuildArAccountingEntries(ArTransactionRecord h, List<ArSubTransactionRecord> subs)
+        {
+            var entries = new List<ArTransactionAcc>();
+            var seq = 1;
+
+            entries.Add(new ArTransactionAcc
+            {
+                acc_seq = seq++,
+                acc_code = AR_RECEIVABLE_ACC,
+                div_code = "PTL",
+                ou_det = "00000",
+                dr_amt = h.curr_amt,
+                cr_amt = 0
+            });
+
+            decimal totalVat = 0;
+            foreach (var s in subs)
+            {
+                var gross = s.curr_amt ?? 0;
+                var vat = CalcVat(gross);
+                var preVat = gross - vat;
+                totalVat += vat;
+
+                entries.Add(new ArTransactionAcc
                 {
-                    tran_seq = s.seq,
-                    rev_exp_code = "1011.001",
+                    acc_seq = seq++,
+                    acc_code = AR_REVENUE_ACC,
                     div_code = "PTL",
                     ou_det = "00000",
-                    curr_amt = s.curr_amt,
-                    local_amt = s.local_amt
-                }).ToList() ?? new();
+                    dr_amt = 0,
+                    cr_amt = preVat
+                });
+            }
 
-            payload.arTransaction.arTransactionAcc =
-                t.ArTransactionAcc?.Select(a => new ArTransactionAcc
-                {
-                    acc_seq = a.seq,
-                    acc_code = a.acc_code,
-                    div_code = "PTL",
-                    ou_det = "00000",
-                    dr_amt = a.dr_amt,
-                    cr_amt = a.cr_amt
-                }).ToList() ?? new();
+            entries.Add(new ArTransactionAcc
+            {
+                acc_seq = seq++,
+                acc_code = AR_VAT_ACC,
+                div_code = "PTL",
+                ou_det = "00000",
+                dr_amt = 0,
+                cr_amt = totalVat
+            });
 
-            return payload;
+            return entries;
+        }
+
+        private static decimal CalcVat(decimal grossAmount)
+        {
+            return Math.Round(grossAmount * VAT_RATE / (1 + VAT_RATE), 2, MidpointRounding.AwayFromZero);
         }
     }
 }

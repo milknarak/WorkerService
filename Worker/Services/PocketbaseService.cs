@@ -129,34 +129,24 @@ namespace Worker.Services
             return result?.items ?? new List<ApSubTransactionRecord>();
         }
 
-        public async Task<ArTransaction?> GetArTransaction(string groupId)
+        public async Task<ArTransactionRecord?> GetArTransaction(string groupId)
         {
             using var res = await SendAsync(() => _http.GetAsync(
                 $"/api/collections/ar_transactions/records?filter=group_id='{groupId}'"));
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArTransaction>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArTransactionRecord>>(JsonHelper.Options);
 
             return result?.items?.FirstOrDefault();
         }
 
-        public async Task<List<ArSubTransaction>> GetArSubTransaction(string groupId)
+        public async Task<List<ArSubTransactionRecord>> GetArSubTransaction(string groupId)
         {
             using var res = await SendAsync(() => _http.GetAsync(
                 $"/api/collections/ar_sub_transactions/records?filter=group_id='{groupId}'"));
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArSubTransaction>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArSubTransactionRecord>>(JsonHelper.Options);
 
-            return result?.items ?? new List<ArSubTransaction>();
-        }
-
-        public async Task<List<ArTransactionAcc>> GetArTransactionAcc(string groupId)
-        {
-            using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ar_transaction_accs/records?filter=group_id='{groupId}'"));
-
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArTransactionAcc>>(JsonHelper.Options);
-
-            return result?.items ?? new List<ArTransactionAcc>();
+            return result?.items ?? new List<ArSubTransactionRecord>();
         }
 
         public async Task UpdateSentDate(string id)
