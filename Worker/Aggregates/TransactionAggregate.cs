@@ -9,5 +9,7 @@ namespace Worker.Aggregates
 
         public ArTransactionRecord ArTransaction { get; set; }
         public List<ArSubTransactionRecord> ArSubTransaction { get; set; }
+
+        public CustomerRecord Customer { get; set; }
     }
 }

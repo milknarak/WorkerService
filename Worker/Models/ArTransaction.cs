@@ -8,6 +8,8 @@ namespace Worker.Models
         public string ou_code { get; set; }
         public string ar_code { get; set; }
         public string vendor_code { get; set; }
+        public string doc_type { get; set; }
+        public string adjust_reason_code { get; set; }
 
         [JsonConverter(typeof(NullableDateTimeConverter))]
         public DateTime? tran_date { get; set; }

@@ -22,7 +22,7 @@ namespace Worker.Services
             return await _pb.GetPendingGroups();
         }
 
-        public async Task<TransactionAggregate> GetTransaction(string groupId, string type)
+        public async Task<TransactionAggregate?> GetTransaction(string groupId, string type)
         {
             if (type == "AP")
             {
@@ -31,10 +31,18 @@ namespace Worker.Services
 
                 await Task.WhenAll(apTask, subTask);
 
+                if (apTask.Result == null)
+                    return null;
+
+                var customer = !string.IsNullOrWhiteSpace(apTask.Result.vendor_code)
+                    ? await _pb.GetCustomer(apTask.Result.vendor_code)
+                    : null;
+
                 return new TransactionAggregate
                 {
                     ApTransaction = apTask.Result,
-                    ApSubTransaction = subTask.Result
+                    ApSubTransaction = subTask.Result,
+                    Customer = customer
                 };
             }
 
@@ -45,10 +53,18 @@ namespace Worker.Services
 
                 await Task.WhenAll(arTask, subTask);
 
+                if (arTask.Result == null)
+                    return null;
+
+                var customer = !string.IsNullOrWhiteSpace(arTask.Result.vendor_code)
+                    ? await _pb.GetCustomer(arTask.Result.vendor_code)
+                    : null;
+
                 return new TransactionAggregate
                 {
                     ArTransaction = arTask.Result,
-                    ArSubTransaction = subTask.Result
+                    ArSubTransaction = subTask.Result,
+                    Customer = customer
                 };
             }
 

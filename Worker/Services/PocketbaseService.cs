@@ -149,6 +149,36 @@ namespace Worker.Services
             return result?.items ?? new List<ArSubTransactionRecord>();
         }
 
+        public async Task<CustomerRecord?> GetCustomer(string code)
+        {
+            if (string.IsNullOrWhiteSpace(code))
+                return null;
+
+            var url = $"/api/collections/master_vendors/records?filter=vendor_code='{code}'";
+
+            _logger.LogInformation("Fetching vendor with code '{Code}'", code);
+
+            try
+            {
+                using var res = await SendAsync(() => _http.GetAsync(url));
+
+                var result = await res.Content.ReadFromJsonAsync<PocketResponse<CustomerRecord>>(JsonHelper.Options);
+                var vendor = result?.items?.FirstOrDefault();
+
+                if (vendor == null)
+                    _logger.LogWarning("Vendor not found for code '{Code}'", code);
+
+                return vendor;
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(
+                    "Vendor fetch failed for code '{Code}' — status {Status}, url {Url}",
+                    code, ex.StatusCode, url);
+                return null;
+            }
+        }
+
         public async Task UpdateSentDate(string id)
         {
             var payload = new

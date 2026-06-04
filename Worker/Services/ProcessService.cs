@@ -39,6 +39,17 @@ namespace Worker.Services
                 {
                     var data = await _transactionService.GetTransaction(g.group_id, g.type);
 
+                    if (data == null)
+                    {
+                        if (g.type == "AP")
+                            _logger.LogWarning("AP transaction not found for group {GroupId} — skipping", g.group_id);
+                        else if (g.type == "AR")
+                            _logger.LogWarning("AR transaction not found for group {GroupId} — skipping", g.group_id);
+                        else
+                            _logger.LogWarning("Unknown type '{Type}' for group {GroupId} — skipping", g.type, g.group_id);
+                        continue;
+                    }
+
                     var payload = PayloadMapper.Map(data, g.type);
 
                     var success = await _sapService.Send(payload, g.type);

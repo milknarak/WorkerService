@@ -41,7 +41,7 @@ namespace Worker.Mappers
             var apTransaction = BuildApHeader(header, today);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
-            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today);
+            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name);
 
             return new SapPayload { apTransaction = apTransaction };
         }
@@ -54,6 +54,7 @@ namespace Worker.Mappers
                 system_id = "API",
                 local_type = h.local_type,
                 doc_type = "IV",
+                adjust_reason_code = "",
                 ap_code = h.vendor_code,
                 tran_date = today,
                 credit_code = "",
@@ -103,6 +104,7 @@ namespace Worker.Mappers
             foreach (var s in subs)
             {
                 var (debit, credit) = GetAccounts(s.sub_group_type);
+                var remark = s.remark ?? "";
 
                 entries.Add(new ApTransactionAcc
                 {
@@ -111,7 +113,8 @@ namespace Worker.Mappers
                     div_code = "PTL",
                     ou_det = "00000",
                     dr_amt = s.curr_amt,
-                    cr_amt = 0
+                    cr_amt = 0,
+                    remark = remark
                 });
 
                 entries.Add(new ApTransactionAcc
@@ -121,17 +124,17 @@ namespace Worker.Mappers
                     div_code = "PTL",
                     ou_det = "00000",
                     dr_amt = 0,
-                    cr_amt = s.curr_amt
+                    cr_amt = s.curr_amt,
+                    remark = remark
                 });
             }
 
             return entries;
         }
 
-        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today)
+        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today, string paymentName)
         {
-            if (string.IsNullOrWhiteSpace(h.tax_id))
-                return new List<ApTransactionPurcTax>();
+            var amount = h.curr_amt ?? 0;
 
             return new List<ApTransactionPurcTax>
             {
@@ -139,7 +142,7 @@ namespace Worker.Mappers
                 {
                     purc_seq = 1,
                     branch_code = "00000",
-                    tax_id = h.tax_id,
+                    tax_id = h.tax_id ?? "",
                     branch_yn = "",
                     branch_name = "",
                     tax_status = "N",
@@ -147,9 +150,12 @@ namespace Worker.Mappers
                     purc_code = "P07-01",
                     purc_tax_no = h.ref_inv_no,
                     purc_tax_date = h.ref_inv_date ?? today,
+                    payment_name = paymentName ?? "",
+                    gs_non_vat_amt = amount,
+                    gs_amt = 0,
                     vat_rate = 0,
                     vat_amt = 0,
-                    total_amt = h.curr_amt ?? 0
+                    total_amt = amount
                 }
             };
         }
@@ -185,6 +191,8 @@ namespace Worker.Mappers
             {
                 ou_code = "PTL",
                 ar_code = h.vendor_code,
+                doc_type = "IV",
+                adjust_reason_code = "",
                 tran_date = today,
                 credit_code = "CR000",
                 due_date = h.due_date ?? today.AddDays(30),
@@ -230,7 +238,8 @@ namespace Worker.Mappers
                 div_code = "PTL",
                 ou_det = "00000",
                 dr_amt = h.curr_amt,
-                cr_amt = 0
+                cr_amt = 0,
+                remark = ""
             });
 
             decimal totalVat = 0;
@@ -248,7 +257,8 @@ namespace Worker.Mappers
                     div_code = "PTL",
                     ou_det = "00000",
                     dr_amt = 0,
-                    cr_amt = preVat
+                    cr_amt = preVat,
+                    remark = s.remark ?? ""
                 });
             }
 
@@ -259,7 +269,8 @@ namespace Worker.Mappers
                 div_code = "PTL",
                 ou_det = "00000",
                 dr_amt = 0,
-                cr_amt = totalVat
+                cr_amt = totalVat,
+                remark = ""
             });
 
             return entries;

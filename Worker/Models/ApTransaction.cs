@@ -10,6 +10,7 @@ namespace Worker.Models
         public string system_id { get; set; }
         public string local_type { get; set; }
         public string doc_type { get; set; }
+        public string adjust_reason_code { get; set; }
         public string ap_code { get; set; }
         public string vendor_code { get; set; }
 
