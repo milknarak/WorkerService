@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Worker.Aggregates;
 using Worker.Models;
 
@@ -279,6 +280,78 @@ namespace Worker.Mappers
         private static decimal CalcVat(decimal grossAmount)
         {
             return Math.Round(grossAmount * VAT_RATE / (1 + VAT_RATE), 2, MidpointRounding.AwayFromZero);
+        }
+
+        // AR-DODO: ส่งจำนวนลิตร + ประเภทน้ำมันไป InsertArTransPriceList แล้วให้ ERP หาราคาเอง
+        private const string PRICE_LIST_UNIT = "LTR";
+
+        // token ใน remark (รูปแบบ "DODO-FUEL001") -> (item_type, item_code)
+        private static readonly Dictionary<string, (string ItemType, string ItemCode)> FuelMap =
+            new(StringComparer.OrdinalIgnoreCase)
+        {
+            { "FUEL001", ("Diesel",     "FG010101-001") },
+            { "FUEL002", ("Benzene 91", "FG010101-002") },
+            { "FUEL003", ("Benzene 95", "FG010101-003") }
+        };
+
+        private static readonly Regex FuelTokenRegex =
+            new(@"FUEL\d{3}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        public static ArPriceListPayload MapArPriceList(TransactionAggregate t)
+        {
+            var header = t.ArTransaction;
+            var subs = t.ArSubTransaction ?? new List<ArSubTransactionRecord>();
+            var today = DateTime.Today;
+
+            var masterData = new ArPriceMasterData
+            {
+                ou_code = "PTL",
+                customer_code = header.vendor_code,
+                order_date = header.ref_doc_date ?? today,
+                delivery_date = header.due_date ?? today,
+                cr_by = "API",
+                prog_id = "API_PROCESS"
+            };
+
+            var itemData = new List<ArPriceItemData>();
+            foreach (var s in subs)
+            {
+                var (itemType, itemCode) = ResolveFuel(s.remark);
+                if (itemType == null)
+                    throw new InvalidOperationException(
+                        $"AR-DODO: cannot resolve fuel token from remark '{s.remark}' (group {header.group_id}, seq {s.seq})");
+
+                itemData.Add(new ArPriceItemData
+                {
+                    seq = s.seq,
+                    item_type = itemType,
+                    item_code = itemCode,
+                    item_qty = s.curr_amt,
+                    item_unit_code = PRICE_LIST_UNIT,
+                    cr_by = "API",
+                    prog_id = "API_PROCESS"
+                });
+            }
+
+            return new ArPriceListPayload
+            {
+                masterData = masterData,
+                itemData = itemData
+            };
+        }
+
+        private static (string ItemType, string ItemCode) ResolveFuel(string remark)
+        {
+            if (string.IsNullOrWhiteSpace(remark))
+                return (null, null);
+
+            var match = FuelTokenRegex.Match(remark);
+            if (!match.Success)
+                return (null, null);
+
+            return FuelMap.TryGetValue(match.Value, out var pair)
+                ? pair
+                : (null, null);
         }
     }
 }

@@ -9,6 +9,7 @@ namespace Worker.Config
         public string PocketbasePassword { get; set; } = "";
         public string ApEndpoint { get; set; } = "";
         public string ArEndpoint { get; set; } = "";
+        public string ArPriceListEndpoint { get; set; } = "";
         public int IntervalMinutes { get; set; } = 10;
     }
 }

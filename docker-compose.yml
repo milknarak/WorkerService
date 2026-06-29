@@ -12,4 +12,5 @@ services:
       - AppSettings__PocketbasePassword=1EWM2cTOiRWLiZmN50CNjBzYtIGZmRTLzMDOlJWOxYmN2ATMsRmcpZXZ
       - AppSettings__ApEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertApTransaction
       - AppSettings__ArEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertArTransaction
+      - AppSettings__ArPriceListEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertArTransPriceList
       - AppSettings__IntervalMinutes=10

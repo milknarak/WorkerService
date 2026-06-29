@@ -50,9 +50,20 @@ namespace Worker.Services
                         continue;
                     }
 
-                    var payload = PayloadMapper.Map(data, g.type);
+                    var isDodo = g.type == "AR" &&
+                                 string.Equals(g.sub_type, "DODO", StringComparison.OrdinalIgnoreCase);
 
-                    var success = await _sapService.Send(payload, g.type);
+                    bool success;
+                    if (isDodo)
+                    {
+                        var priceList = PayloadMapper.MapArPriceList(data);
+                        success = await _sapService.SendPriceList(priceList);
+                    }
+                    else
+                    {
+                        var payload = PayloadMapper.Map(data, g.type);
+                        success = await _sapService.Send(payload, g.type);
+                    }
 
                     if (!success)
                     {

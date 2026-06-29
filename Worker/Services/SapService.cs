@@ -29,6 +29,17 @@ namespace Worker.Services
                 _ => throw new ArgumentOutOfRangeException(nameof(type), $"Unknown transaction type: {type}")
             };
 
+            return await PostAndValidate(endpoint, payload);
+        }
+
+        // AR-DODO: ส่งจำนวนลิตรไป InsertArTransPriceList ให้ ERP หาราคาเอง
+        public async Task<bool> SendPriceList(ArPriceListPayload payload)
+        {
+            return await PostAndValidate(_settings.ArPriceListEndpoint, payload);
+        }
+
+        private async Task<bool> PostAndValidate(string endpoint, object payload)
+        {
             var response = await _http.PostAsJsonAsync(endpoint, payload);
 
             var body = await response.Content.ReadAsStringAsync();
