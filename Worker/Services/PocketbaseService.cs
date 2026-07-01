@@ -14,6 +14,7 @@ namespace Worker.Services
     {
         private readonly HttpClient _http;
         private readonly AppSettings _config;
+        private readonly TimeProvider _timeProvider;
         private readonly ILogger<PocketbaseService> _logger;
         private readonly SemaphoreSlim _authLock = new(1, 1);
         private string? _token;
@@ -21,21 +22,23 @@ namespace Worker.Services
         public PocketbaseService(
             HttpClient http,
             IOptions<AppSettings> config,
+            TimeProvider timeProvider,
             ILogger<PocketbaseService> logger)
         {
             _http = http;
             _config = config.Value;
+            _timeProvider = timeProvider;
             _logger = logger;
 
             _http.BaseAddress = new Uri(_config.PocketbaseUrl);
         }
 
-        public async Task Authenticate(bool forceRefresh = false)
+        public async Task Authenticate(bool forceRefresh = false, CancellationToken ct = default)
         {
             if (!forceRefresh && !string.IsNullOrEmpty(_token))
                 return;
 
-            await _authLock.WaitAsync();
+            await _authLock.WaitAsync(ct);
             try
             {
                 if (!forceRefresh && !string.IsNullOrEmpty(_token))
@@ -59,12 +62,13 @@ namespace Worker.Services
 
                 var res = await _http.PostAsync(
                     "/api/collections/_superusers/auth-with-password",
-                    content);
+                    content,
+                    ct);
 
                 res.EnsureSuccessStatusCode();
 
                 var result =
-                    await res.Content.ReadFromJsonAsync<AuthResponse>();
+                    await res.Content.ReadFromJsonAsync<AuthResponse>(ct);
 
                 if (result == null || string.IsNullOrEmpty(result.token))
                     throw new InvalidOperationException("Pocketbase authentication returned empty token.");
@@ -80,9 +84,9 @@ namespace Worker.Services
             }
         }
 
-        private async Task<HttpResponseMessage> SendAsync(Func<Task<HttpResponseMessage>> send)
+        private async Task<HttpResponseMessage> SendAsync(Func<Task<HttpResponseMessage>> send, CancellationToken ct)
         {
-            await Authenticate();
+            await Authenticate(ct: ct);
 
             var res = await send();
 
@@ -91,7 +95,7 @@ namespace Worker.Services
                 _logger.LogInformation("Pocketbase token rejected (401). Re-authenticating and retrying.");
                 res.Dispose();
 
-                await Authenticate(forceRefresh: true);
+                await Authenticate(forceRefresh: true, ct: ct);
                 res = await send();
             }
 
@@ -99,57 +103,57 @@ namespace Worker.Services
             return res;
         }
 
-        public async Task<List<TransactionGroup>> GetPendingGroups()
+        public async Task<List<TransactionGroup>> GetPendingGroups(CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                "/api/collections/transaction_groups/records?filter=sent_to_sap_at=null"));
+                "/api/collections/transaction_groups/records?filter=sent_to_sap_at=null", ct), ct);
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<TransactionGroup>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<TransactionGroup>>(JsonHelper.Options, ct);
 
             return result?.items ?? new List<TransactionGroup>();
         }
 
-        public async Task<ApTransactionRecord?> GetApTransaction(string groupId)
+        public async Task<ApTransactionRecord?> GetApTransaction(string groupId, CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ap_transactions/records?filter=group_id='{groupId}'"));
+                $"/api/collections/ap_transactions/records?filter=group_id='{groupId}'", ct), ct);
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransactionRecord>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransactionRecord>>(JsonHelper.Options, ct);
 
             return result?.items?.FirstOrDefault();
         }
 
-        public async Task<List<ApSubTransactionRecord>> GetApSubTransaction(string groupId)
+        public async Task<List<ApSubTransactionRecord>> GetApSubTransaction(string groupId, CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ap_sub_transactions/records?filter=group_id='{groupId}'"));
+                $"/api/collections/ap_sub_transactions/records?filter=group_id='{groupId}'", ct), ct);
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApSubTransactionRecord>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApSubTransactionRecord>>(JsonHelper.Options, ct);
 
             return result?.items ?? new List<ApSubTransactionRecord>();
         }
 
-        public async Task<ArTransactionRecord?> GetArTransaction(string groupId)
+        public async Task<ArTransactionRecord?> GetArTransaction(string groupId, CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ar_transactions/records?filter=group_id='{groupId}'"));
+                $"/api/collections/ar_transactions/records?filter=group_id='{groupId}'", ct), ct);
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArTransactionRecord>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArTransactionRecord>>(JsonHelper.Options, ct);
 
             return result?.items?.FirstOrDefault();
         }
 
-        public async Task<List<ArSubTransactionRecord>> GetArSubTransaction(string groupId)
+        public async Task<List<ArSubTransactionRecord>> GetArSubTransaction(string groupId, CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ar_sub_transactions/records?filter=group_id='{groupId}'"));
+                $"/api/collections/ar_sub_transactions/records?filter=group_id='{groupId}'", ct), ct);
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArSubTransactionRecord>>(JsonHelper.Options);
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ArSubTransactionRecord>>(JsonHelper.Options, ct);
 
             return result?.items ?? new List<ArSubTransactionRecord>();
         }
 
-        public async Task<CustomerRecord?> GetCustomer(string code)
+        public async Task<CustomerRecord?> GetCustomer(string code, CancellationToken ct = default)
         {
             if (string.IsNullOrWhiteSpace(code))
                 return null;
@@ -160,9 +164,9 @@ namespace Worker.Services
 
             try
             {
-                using var res = await SendAsync(() => _http.GetAsync(url));
+                using var res = await SendAsync(() => _http.GetAsync(url, ct), ct);
 
-                var result = await res.Content.ReadFromJsonAsync<PocketResponse<CustomerRecord>>(JsonHelper.Options);
+                var result = await res.Content.ReadFromJsonAsync<PocketResponse<CustomerRecord>>(JsonHelper.Options, ct);
                 var vendor = result?.items?.FirstOrDefault();
 
                 if (vendor == null)
@@ -179,16 +183,17 @@ namespace Worker.Services
             }
         }
 
-        public async Task UpdateSentDate(string id)
+        public async Task UpdateSentDate(string id, CancellationToken ct = default)
         {
             var payload = new
             {
-                sent_to_sap_at = DateTime.UtcNow
+                sent_to_sap_at = _timeProvider.GetUtcNow().UtcDateTime
             };
 
             using var res = await SendAsync(() => _http.PatchAsJsonAsync(
                 $"/api/collections/transaction_groups/records/{id}",
-                payload));
+                payload,
+                ct), ct);
         }
     }
 }

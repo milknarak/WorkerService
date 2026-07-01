@@ -9,6 +9,8 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection("AppSettings"));
 
+builder.Services.AddSingleton(TimeProvider.System);
+
 builder.Services.AddHttpClient<PocketbaseService>()
 .ConfigurePrimaryHttpMessageHandler(() =>
 {

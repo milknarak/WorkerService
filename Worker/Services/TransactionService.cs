@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using Worker.Aggregates;
 using Worker.Models;
@@ -17,17 +18,17 @@ namespace Worker.Services
             _pb = pb;
         }
 
-        public async Task<List<TransactionGroup>> GetPendingGroups()
+        public async Task<List<TransactionGroup>> GetPendingGroups(CancellationToken ct = default)
         {
-            return await _pb.GetPendingGroups();
+            return await _pb.GetPendingGroups(ct);
         }
 
-        public async Task<TransactionAggregate?> GetTransaction(string groupId, string type)
+        public async Task<TransactionAggregate?> GetTransaction(string groupId, TransactionType type, CancellationToken ct = default)
         {
-            if (type == "AP")
+            if (type == TransactionType.Ap)
             {
-                var apTask = _pb.GetApTransaction(groupId);
-                var subTask = _pb.GetApSubTransaction(groupId);
+                var apTask = _pb.GetApTransaction(groupId, ct);
+                var subTask = _pb.GetApSubTransaction(groupId, ct);
 
                 await Task.WhenAll(apTask, subTask);
 
@@ -35,7 +36,7 @@ namespace Worker.Services
                     return null;
 
                 var customer = !string.IsNullOrWhiteSpace(apTask.Result.vendor_code)
-                    ? await _pb.GetCustomer(apTask.Result.vendor_code)
+                    ? await _pb.GetCustomer(apTask.Result.vendor_code, ct)
                     : null;
 
                 return new TransactionAggregate
@@ -46,10 +47,10 @@ namespace Worker.Services
                 };
             }
 
-            if (type == "AR")
+            if (type == TransactionType.Ar)
             {
-                var arTask = _pb.GetArTransaction(groupId);
-                var subTask = _pb.GetArSubTransaction(groupId);
+                var arTask = _pb.GetArTransaction(groupId, ct);
+                var subTask = _pb.GetArSubTransaction(groupId, ct);
 
                 await Task.WhenAll(arTask, subTask);
 
@@ -57,7 +58,7 @@ namespace Worker.Services
                     return null;
 
                 var customer = !string.IsNullOrWhiteSpace(arTask.Result.vendor_code)
-                    ? await _pb.GetCustomer(arTask.Result.vendor_code)
+                    ? await _pb.GetCustomer(arTask.Result.vendor_code, ct)
                     : null;
 
                 return new TransactionAggregate
@@ -71,9 +72,9 @@ namespace Worker.Services
             throw new ArgumentOutOfRangeException(nameof(type), $"Unknown type {type}");
         }
 
-        public async Task MarkAsSent(string id)
+        public async Task MarkAsSent(string id, CancellationToken ct = default)
         {
-            await _pb.UpdateSentDate(id);
+            await _pb.UpdateSentDate(id, ct);
         }
     }
 }

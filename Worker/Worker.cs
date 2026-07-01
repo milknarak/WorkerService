@@ -30,7 +30,7 @@ public class ServiceWorker : BackgroundService
 
                 using var scope = _scopeFactory.CreateScope();
                 var processService = scope.ServiceProvider.GetRequiredService<ProcessService>();
-                await processService.Process();
+                await processService.Process(stoppingToken);
 
                 await Task.Delay(TimeSpan.FromMinutes(_settings.IntervalMinutes), stoppingToken);
             }

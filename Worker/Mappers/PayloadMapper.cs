@@ -22,28 +22,27 @@ namespace Worker.Mappers
             { "ap_debit_note",      ("1480.002", "7862.001") }
         };
 
-        public static SapPayload Map(TransactionAggregate t, string type)
+        public static SapPayload Map(TransactionAggregate t, TransactionType type, DateTime now)
         {
-            if (type.Equals("AP", StringComparison.OrdinalIgnoreCase))
-                return MapAP(t);
-
-            if (type.Equals("AR", StringComparison.OrdinalIgnoreCase))
-                return MapAR(t);
-
-            throw new Exception($"Unknown transaction type: {type}");
+            return type switch
+            {
+                TransactionType.Ap => MapAP(t, now),
+                TransactionType.Ar => MapAR(t, now),
+                _ => throw new ArgumentOutOfRangeException(nameof(type), $"Unknown transaction type: {type}")
+            };
         }
 
-        private static SapPayload MapAP(TransactionAggregate t)
+        private static SapPayload MapAP(TransactionAggregate t, DateTime now)
         {
             var header = t.ApTransaction;
             var subs = t.ApSubTransaction ?? new List<ApSubTransactionRecord>();
-            var today = DateTime.Today;
+            var today = now.Date;
 
             // ลูกค้าลาว (LAK): ส่งเลขดิบ ให้ ERP แปลงค่าเงินเอง — local_amt = curr_amt
             // upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub
             var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
 
-            var apTransaction = BuildApHeader(header, today, headerAmt);
+            var apTransaction = BuildApHeader(header, now, headerAmt);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
             apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt);
@@ -51,8 +50,10 @@ namespace Worker.Mappers
             return new SapPayload { apTransaction = apTransaction };
         }
 
-        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime today, decimal currAmt)
+        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt)
         {
+            var today = now.Date;
+
             return new ApTransaction
             {
                 ou_code = "PTL",
@@ -77,10 +78,10 @@ namespace Worker.Mappers
                 remark = "",
                 is_manual_acc = "TRUE",
                 cr_by = "API",
-                cr_date = DateTime.Now,
+                cr_date = now,
                 prog_id = "API_PROCESS",
                 upd_by = "API",
-                upd_date = DateTime.Now,
+                upd_date = now,
                 upd_prog_id = "API_PROCESS"
             };
         }
@@ -176,11 +177,11 @@ namespace Worker.Mappers
         private const string AR_VAT_ACC = "4320.001";
         private const decimal VAT_RATE = 0.10m;
 
-        private static SapPayload MapAR(TransactionAggregate t)
+        private static SapPayload MapAR(TransactionAggregate t, DateTime now)
         {
             var header = t.ArTransaction;
             var subs = t.ArSubTransaction ?? new List<ArSubTransactionRecord>();
-            var today = DateTime.Today;
+            var today = now.Date;
 
             // เหมือน AP: upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub (ยอดรวม incl VAT)
             var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
@@ -305,11 +306,11 @@ namespace Worker.Mappers
         private static readonly Regex FuelTokenRegex =
             new(@"FUEL\d{3}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-        public static ArPriceListPayload MapArPriceList(TransactionAggregate t)
+        public static ArPriceListPayload MapArPriceList(TransactionAggregate t, DateTime now)
         {
             var header = t.ArTransaction;
             var subs = t.ArSubTransaction ?? new List<ArSubTransactionRecord>();
-            var today = DateTime.Today;
+            var today = now.Date;
 
             var masterData = new ArPriceMasterData
             {

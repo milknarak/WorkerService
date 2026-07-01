@@ -20,29 +20,29 @@ namespace Worker.Services
             _logger = logger;
         }
 
-        public async Task<bool> Send(SapPayload payload, string type)
+        public async Task<bool> Send(SapPayload payload, TransactionType type, CancellationToken ct = default)
         {
             var endpoint = type switch
             {
-                "AP" => _settings.ApEndpoint,
-                "AR" => _settings.ArEndpoint,
+                TransactionType.Ap => _settings.ApEndpoint,
+                TransactionType.Ar => _settings.ArEndpoint,
                 _ => throw new ArgumentOutOfRangeException(nameof(type), $"Unknown transaction type: {type}")
             };
 
-            return await PostAndValidate(endpoint, payload);
+            return await PostAndValidate(endpoint, payload, ct);
         }
 
         // AR-DODO: ส่งจำนวนลิตรไป InsertArTransPriceList ให้ ERP หาราคาเอง
-        public async Task<bool> SendPriceList(ArPriceListPayload payload)
+        public async Task<bool> SendPriceList(ArPriceListPayload payload, CancellationToken ct = default)
         {
-            return await PostAndValidate(_settings.ArPriceListEndpoint, payload);
+            return await PostAndValidate(_settings.ArPriceListEndpoint, payload, ct);
         }
 
-        private async Task<bool> PostAndValidate(string endpoint, object payload)
+        private async Task<bool> PostAndValidate(string endpoint, object payload, CancellationToken ct)
         {
-            var response = await _http.PostAsJsonAsync(endpoint, payload);
+            var response = await _http.PostAsJsonAsync(endpoint, payload, ct);
 
-            var body = await response.Content.ReadAsStringAsync();
+            var body = await response.Content.ReadAsStringAsync(ct);
 
             if (!response.IsSuccessStatusCode)
             {
