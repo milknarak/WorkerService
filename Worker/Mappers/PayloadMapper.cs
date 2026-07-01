@@ -39,15 +39,19 @@ namespace Worker.Mappers
             var subs = t.ApSubTransaction ?? new List<ApSubTransactionRecord>();
             var today = DateTime.Today;
 
-            var apTransaction = BuildApHeader(header, today);
+            // ลูกค้าลาว (LAK): ส่งเลขดิบ ให้ ERP แปลงค่าเงินเอง — local_amt = curr_amt
+            // upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub
+            var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
+
+            var apTransaction = BuildApHeader(header, today, headerAmt);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
-            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name);
+            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt);
 
             return new SapPayload { apTransaction = apTransaction };
         }
 
-        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime today)
+        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime today, decimal currAmt)
         {
             return new ApTransaction
             {
@@ -66,10 +70,10 @@ namespace Worker.Mappers
                 ref_po_no = h.ref_po_no,
                 ref_gr_no_by_in = h.ref_gr_no_by_in,
                 curr_code = h.curr_code,
-                pre_curr_amt = h.pre_curr_amt,
-                curr_amt = h.curr_amt,
+                pre_curr_amt = currAmt,   // ไม่มี VAT ฝั่งเรา → ยอดก่อน VAT = ยอดเต็ม
+                curr_amt = currAmt,
                 exchange_rate = h.exchange_rate,
-                local_amt = h.curr_amt,
+                local_amt = currAmt,
                 remark = "",
                 is_manual_acc = "TRUE",
                 cr_by = "API",
@@ -92,7 +96,7 @@ namespace Worker.Mappers
                 div_code = "PTL",
                 ou_det = "00000",
                 curr_amt = s.curr_amt,
-                local_amt = s.local_amt,
+                local_amt = s.curr_amt,
                 note = s.remark ?? ""
             };
         }
@@ -133,9 +137,8 @@ namespace Worker.Mappers
             return entries;
         }
 
-        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today, string paymentName)
+        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today, string paymentName, decimal amount)
         {
-            var amount = h.curr_amt ?? 0;
 
             return new List<ApTransactionPurcTax>
             {
@@ -179,14 +182,19 @@ namespace Worker.Mappers
             var subs = t.ArSubTransaction ?? new List<ArSubTransactionRecord>();
             var today = DateTime.Today;
 
-            var arTransaction = BuildArHeader(header, today);
+            // เหมือน AP: upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub (ยอดรวม incl VAT)
+            var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
+            // VAT รวม = ผลรวม VAT ต่อบรรทัด (คิดวิธีเดียวกับ GL เพื่อให้ยอดตรงกันเป๊ะ)
+            var totalVat = subs.Sum(s => CalcVat(s.curr_amt ?? 0));
+
+            var arTransaction = BuildArHeader(header, today, headerAmt, totalVat);
             arTransaction.arSubTransaction = subs.Select(BuildArLineItem).ToList();
-            arTransaction.arTransactionAcc = BuildArAccountingEntries(header, subs);
+            arTransaction.arTransactionAcc = BuildArAccountingEntries(headerAmt, subs);
 
             return new SapPayload { arTransaction = arTransaction };
         }
 
-        private static ArTransaction BuildArHeader(ArTransactionRecord h, DateTime today)
+        private static ArTransaction BuildArHeader(ArTransactionRecord h, DateTime today, decimal currAmt, decimal vatAmt)
         {
             return new ArTransaction
             {
@@ -201,9 +209,9 @@ namespace Worker.Mappers
                 ref_doc_date = h.ref_doc_date ?? today,
                 curr_code = h.curr_code,
                 exchange_rate = h.exchange_rate,
-                curr_amt = h.curr_amt,
-                local_amt = h.curr_amt,
-                vat_amt = null,
+                curr_amt = currAmt,
+                local_amt = currAmt,
+                vat_amt = vatAmt,
                 remark = "",
                 system_id = "AR",
                 branch_code = "00000",
@@ -227,7 +235,7 @@ namespace Worker.Mappers
             };
         }
 
-        private static List<ArTransactionAcc> BuildArAccountingEntries(ArTransactionRecord h, List<ArSubTransactionRecord> subs)
+        private static List<ArTransactionAcc> BuildArAccountingEntries(decimal headerAmt, List<ArSubTransactionRecord> subs)
         {
             var entries = new List<ArTransactionAcc>();
             var seq = 1;
@@ -238,7 +246,7 @@ namespace Worker.Mappers
                 acc_code = AR_RECEIVABLE_ACC,
                 div_code = "PTL",
                 ou_det = "00000",
-                dr_amt = h.curr_amt,
+                dr_amt = headerAmt,
                 cr_amt = 0,
                 remark = ""
             });
