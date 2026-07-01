@@ -58,6 +58,20 @@ namespace Worker.Services
                         continue;
                     }
 
+                    // Header ที่ไม่มี sub-transaction เลย → ยอดรวมจะเป็น 0 (curr_amt=0) แล้วโดน ERP ปัดตก (E008)
+                    // กันไว้ตั้งแต่ต้น ไม่ต้องยิงไป ERP; ปล่อย pending ไว้ให้ upstream แก้ข้อมูล
+                    var subCount = type == TransactionType.Ap
+                        ? data.ApSubTransaction?.Count ?? 0
+                        : data.ArSubTransaction?.Count ?? 0;
+
+                    if (subCount == 0)
+                    {
+                        _logger.LogWarning(
+                            "{Type} group {GroupId} has no sub-transactions — skipping (would produce curr_amt=0)",
+                            type, g.group_id);
+                        continue;
+                    }
+
                     var now = _timeProvider.GetLocalNow().LocalDateTime;
 
                     var isDodo = type == TransactionType.Ar &&
