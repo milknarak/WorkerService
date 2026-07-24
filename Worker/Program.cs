@@ -39,20 +39,7 @@ builder.Services.AddHttpClient<SapService>();
 builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ProcessService>();
 
-var settings = builder.Configuration.GetSection("AppSettings").Get<AppSettings>()!;
+builder.Services.AddHostedService<ServiceWorker>();
 
-if (settings.DebugRunOnce)
-{
-    var host = builder.Build();
-
-    using var scope = host.Services.CreateScope();
-    var process = scope.ServiceProvider.GetRequiredService<ProcessService>();
-    await process.Process();
-}
-else
-{
-    builder.Services.AddHostedService<ServiceWorker>();
-
-    var host = builder.Build();
-    host.Run();
-}
+var host = builder.Build();
+host.Run();
