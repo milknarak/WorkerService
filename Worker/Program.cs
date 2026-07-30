@@ -9,9 +9,11 @@ var builder = Host.CreateApplicationBuilder(args);
 
 builder.Services.Configure<AppSettings>(builder.Configuration.GetSection("AppSettings"));
 
+var appSettings = builder.Configuration.GetSection("AppSettings").Get<AppSettings>() ?? new AppSettings();
+
 builder.Services.AddSingleton(TimeProvider.System);
 
-builder.Services.AddHttpClient<PocketbaseService>()
+builder.Services.AddHttpClient("pocketbase")
 .ConfigurePrimaryHttpMessageHandler(() =>
 {
     return new SocketsHttpHandler
@@ -35,8 +37,50 @@ builder.Services.AddHttpClient<PocketbaseService>()
     };
 });
 
+// AP and AR are separate PocketBase instances that share the same login — only the URL differs.
+// One TransactionService (backed by its own PocketbaseService) per side; ProcessService injects
+// IEnumerable<TransactionService> and runs the pipeline for each.
+var instances = new[]
+{
+    new PocketbaseInstance
+    {
+        Name = "AP",
+        Url = appSettings.ApPocketbaseUrl,
+        User = appSettings.PocketbaseUser,
+        Password = appSettings.PocketbasePassword,
+    },
+    new PocketbaseInstance
+    {
+        Name = "AR",
+        Url = appSettings.ArPocketbaseUrl,
+        User = appSettings.PocketbaseUser,
+        Password = appSettings.PocketbasePassword,
+    },
+};
+
+foreach (var instance in instances)
+{
+    // URL ว่าง/ผิด → skip เฉพาะ instance นั้น (ไม่ให้ new Uri ใน ctor พังลากทั้งระบบ เช่น AR พังทำ AP ล่มด้วย)
+    if (!Uri.TryCreate(instance.Url, UriKind.Absolute, out _))
+    {
+        Console.WriteLine($"[startup] Skipping PocketBase instance '{instance.Name}' — invalid or empty Url: '{instance.Url}'");
+        continue;
+    }
+
+    var pb = instance;
+    builder.Services.AddScoped(sp =>
+    {
+        var http = sp.GetRequiredService<IHttpClientFactory>().CreateClient("pocketbase");
+        var pocketbase = new PocketbaseService(
+            http,
+            pb,
+            sp.GetRequiredService<TimeProvider>(),
+            sp.GetRequiredService<ILogger<PocketbaseService>>());
+        return new TransactionService(pocketbase);
+    });
+}
+
 builder.Services.AddHttpClient<SapService>();
-builder.Services.AddScoped<TransactionService>();
 builder.Services.AddScoped<ProcessService>();
 
 builder.Services.AddHostedService<ServiceWorker>();

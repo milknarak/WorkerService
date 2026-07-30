@@ -11,18 +11,18 @@ namespace Worker.Services
 {
     public class ProcessService
     {
-        private readonly TransactionService _transactionService;
+        private readonly IEnumerable<TransactionService> _transactionServices;
         private readonly SapService _sapService;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<ProcessService> _logger;
 
         public ProcessService(
-            TransactionService transactionService,
+            IEnumerable<TransactionService> transactionServices,
             SapService sapService,
             TimeProvider timeProvider,
             ILogger<ProcessService> logger)
         {
-            _transactionService = transactionService;
+            _transactionServices = transactionServices;
             _sapService = sapService;
             _timeProvider = timeProvider;
             _logger = logger;
@@ -30,11 +30,28 @@ namespace Worker.Services
 
         public async Task Process(CancellationToken ct = default)
         {
-            var groups = await _transactionService.GetPendingGroups(ct);
+            foreach (var ts in _transactionServices)
+            {
+                ct.ThrowIfCancellationRequested();
+
+                try
+                {
+                    await ProcessInstance(ts, ct);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Process error for instance {Instance}", ts.Name);
+                }
+            }
+        }
+
+        private async Task ProcessInstance(TransactionService transactionService, CancellationToken ct)
+        {
+            var groups = await transactionService.GetPendingGroups(ct);
 
             if(groups == null || !groups.Any())
             {
-                _logger.LogInformation("No pending transaction groups to process.");
+                _logger.LogInformation("[{Instance}] No pending transaction groups to process.", transactionService.Name);
                 return;
             }
 
@@ -50,7 +67,7 @@ namespace Worker.Services
                         continue;
                     }
 
-                    var data = await _transactionService.GetTransaction(g.group_id, type, ct);
+                    var data = await transactionService.GetTransaction(g.group_id, type, ct);
 
                     if (data == null)
                     {
@@ -95,8 +112,8 @@ namespace Worker.Services
                         continue;
                     }
 
-                    await _transactionService.MarkAsSent(g.id, ct);
-                    _logger.LogInformation("Processed group {GroupId} successfully", g.group_id);
+                    await transactionService.MarkAsSent(g.id, ct);
+                    _logger.LogInformation("[{Instance}] Processed group {GroupId} successfully", transactionService.Name, g.group_id);
                 }
                 catch (Exception ex)
                 {

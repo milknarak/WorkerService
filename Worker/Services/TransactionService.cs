@@ -13,6 +13,8 @@ namespace Worker.Services
     {
         private readonly PocketbaseService _pb;
 
+        public string Name => _pb.Name;
+
         public TransactionService(PocketbaseService pb)
         {
             _pb = pb;
@@ -57,15 +59,11 @@ namespace Worker.Services
                 if (arTask.Result == null)
                     return null;
 
-                var customer = !string.IsNullOrWhiteSpace(arTask.Result.vendor_code)
-                    ? await _pb.GetCustomer(arTask.Result.vendor_code, ct)
-                    : null;
-
+                // AR payload (COCO/DODO) ไม่ใช้ชื่อลูกค้า → ไม่ต้องดึง customer
                 return new TransactionAggregate
                 {
                     ArTransaction = arTask.Result,
-                    ArSubTransaction = subTask.Result,
-                    Customer = customer
+                    ArSubTransaction = subTask.Result
                 };
             }
 

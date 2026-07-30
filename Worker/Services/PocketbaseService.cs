@@ -1,4 +1,3 @@
-using Microsoft.Extensions.Options;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -13,24 +12,26 @@ namespace Worker.Services
     public class PocketbaseService
     {
         private readonly HttpClient _http;
-        private readonly AppSettings _config;
+        private readonly PocketbaseInstance _instance;
         private readonly TimeProvider _timeProvider;
         private readonly ILogger<PocketbaseService> _logger;
         private readonly SemaphoreSlim _authLock = new(1, 1);
         private string? _token;
 
+        public string Name => _instance.Name;
+
         public PocketbaseService(
             HttpClient http,
-            IOptions<AppSettings> config,
+            PocketbaseInstance instance,
             TimeProvider timeProvider,
             ILogger<PocketbaseService> logger)
         {
             _http = http;
-            _config = config.Value;
+            _instance = instance;
             _timeProvider = timeProvider;
             _logger = logger;
 
-            _http.BaseAddress = new Uri(_config.PocketbaseUrl);
+            _http.BaseAddress = new Uri(_instance.Url);
         }
 
         public async Task Authenticate(bool forceRefresh = false, CancellationToken ct = default)
@@ -49,8 +50,8 @@ namespace Worker.Services
 
                 var body = new
                 {
-                    identity = _config.PocketbaseUser,
-                    password = _config.PocketbasePassword
+                    identity = _instance.User,
+                    password = _instance.Password
                 };
 
                 var json = JsonSerializer.Serialize(body);
@@ -160,7 +161,7 @@ namespace Worker.Services
 
             var url = $"/api/collections/master_vendors/records?filter=vendor_code='{code}'";
 
-            _logger.LogInformation("Fetching vendor with code '{Code}'", code);
+            _logger.LogInformation("[{Instance}] Fetching vendor with code '{Code}'", _instance.Name, code);
 
             try
             {
@@ -170,15 +171,15 @@ namespace Worker.Services
                 var vendor = result?.items?.FirstOrDefault();
 
                 if (vendor == null)
-                    _logger.LogWarning("Vendor not found for code '{Code}'", code);
+                    _logger.LogWarning("[{Instance}] Customer not found for code '{Code}'", _instance.Name, code);
 
                 return vendor;
             }
             catch (HttpRequestException ex)
             {
                 _logger.LogWarning(
-                    "Vendor fetch failed for code '{Code}' — status {Status}, url {Url}",
-                    code, ex.StatusCode, url);
+                    "[{Instance}] Customer fetch failed for code '{Code}' — status {Status}, url {Url}",
+                    _instance.Name, code, ex.StatusCode, url);
                 return null;
             }
         }
