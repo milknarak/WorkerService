@@ -66,7 +66,16 @@ namespace Worker.Services
                     content,
                     ct);
 
-                res.EnsureSuccessStatusCode();
+                if (!res.IsSuccessStatusCode)
+                {
+                    // credential ผิด/ไม่มี superuser นี้ใน instance → PocketBase คืน 400 "Failed to authenticate."
+                    var errorBody = await res.Content.ReadAsStringAsync(ct);
+                    _logger.LogError(
+                        "[{Instance}] PocketBase auth failed — status {Status}, identity {Identity}, body: {Body}",
+                        _instance.Name, (int)res.StatusCode, _instance.User, errorBody);
+
+                    res.EnsureSuccessStatusCode();
+                }
 
                 var result =
                     await res.Content.ReadFromJsonAsync<AuthResponse>(ct);
@@ -100,7 +109,19 @@ namespace Worker.Services
                 res = await send();
             }
 
-            res.EnsureSuccessStatusCode();
+            if (!res.IsSuccessStatusCode)
+            {
+                // EnsureSuccessStatusCode ทิ้ง body ทิ้ง — PocketBase ใส่เหตุผลจริงมาใน body
+                // (เช่น "Failed to authenticate." เมื่อ credential ผิด, หรือ "Invalid filter.")
+                // log ไว้ก่อนโยน ไม่งั้น log เห็นแค่ "400 (Bad Request)" ลอยๆ
+                var body = await res.Content.ReadAsStringAsync(ct);
+                _logger.LogError(
+                    "[{Instance}] PocketBase request failed — status {Status}, body: {Body}",
+                    _instance.Name, (int)res.StatusCode, body);
+
+                res.EnsureSuccessStatusCode();
+            }
+
             return res;
         }
 

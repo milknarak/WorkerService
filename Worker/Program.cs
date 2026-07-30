@@ -37,7 +37,7 @@ builder.Services.AddHttpClient("pocketbase")
     };
 });
 
-// AP and AR are separate PocketBase instances that share the same login — only the URL differs.
+// AP and AR are separate PocketBase instances, each with its own superuser login and URL.
 // One TransactionService (backed by its own PocketbaseService) per side; ProcessService injects
 // IEnumerable<TransactionService> and runs the pipeline for each.
 var instances = new[]
@@ -46,15 +46,15 @@ var instances = new[]
     {
         Name = "AP",
         Url = appSettings.ApPocketbaseUrl,
-        User = appSettings.PocketbaseUser,
-        Password = appSettings.PocketbasePassword,
+        User = appSettings.ApPocketbaseUser,
+        Password = appSettings.ApPocketbasePassword,
     },
     new PocketbaseInstance
     {
         Name = "AR",
         Url = appSettings.ArPocketbaseUrl,
-        User = appSettings.PocketbaseUser,
-        Password = appSettings.PocketbasePassword,
+        User = appSettings.ArPocketbaseUser,
+        Password = appSettings.ArPocketbasePassword,
     },
 };
 

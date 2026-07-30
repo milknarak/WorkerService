@@ -6,8 +6,10 @@ services:
     restart: unless-stopped
     environment:
       - DOTNET_ENVIRONMENT=Production
-      - AppSettings__PocketbaseUser=5a1679bd-bf69-4c0c-bdf4-338eb91f6601@ztrus.io
-      - AppSettings__PocketbasePassword=1EWM2cTOiRWLiZmN50CNjBzYtIGZmRTLzMDOlJWOxYmN2ATMsRmcpZXZ
+      - AppSettings__ApPocketbaseUser=5a1679bd-bf69-4c0c-bdf4-338eb91f6601@ztrus.io
+      - AppSettings__ApPocketbasePassword=1EWM2cTOiRWLiZmN50CNjBzYtIGZmRTLzMDOlJWOxYmN2ATMsRmcpZXZ
+      - AppSettings__ArPocketbaseUser=e0878ac5-5342-4b73-90d8-e1ceb9b663ec@ztrus.io
+      - AppSettings__ArPocketbasePassword=lBDO3gTYjVTL1MDNy0CNidzMtkDMkhTLlFzYlJWOiZjNzU2YsRmcpZXZ
       - AppSettings__ApPocketbaseUrl=https://5a1679bd-bf69-4c0c-bdf4-338eb91f6601.pocketbase.barbarian.ldrive.io
       - AppSettings__ArPocketbaseUrl=https://e0878ac5-5342-4b73-90d8-e1ceb9b663ec.pocketbase.barbarian.ldrive.io
       - AppSettings__ApEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertApTransaction

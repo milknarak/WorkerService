@@ -12,11 +12,14 @@ namespace Worker.Config
 
     public class AppSettings
     {
-        // Shared credentials — same login on both instances.
-        public string PocketbaseUser { get; set; } = "";
-        public string PocketbasePassword { get; set; } = "";
+        // Per-instance credentials — each PocketBase instance has its own superuser
+        // (identity = <instance-id>@ztrus.io), so AP and AR do NOT share a login.
+        public string ApPocketbaseUser { get; set; } = "";
+        public string ApPocketbasePassword { get; set; } = "";
+        public string ArPocketbaseUser { get; set; } = "";
+        public string ArPocketbasePassword { get; set; } = "";
 
-        // One instance per side; only the URL differs.
+        // One instance per side.
         public string ApPocketbaseUrl { get; set; } = "";
         public string ArPocketbaseUrl { get; set; } = "";
 
