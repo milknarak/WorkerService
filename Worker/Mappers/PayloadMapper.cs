@@ -294,17 +294,23 @@ namespace Worker.Mappers
         // AR-DODO: ส่งจำนวนลิตร + ประเภทน้ำมันไป InsertArTransPriceList แล้วให้ ERP หาราคาเอง
         private const string PRICE_LIST_UNIT = "LTR";
 
-        // token ใน remark (รูปแบบ "DODO-FUEL001") -> (item_type, item_code)
-        private static readonly Dictionary<string, (string ItemType, string ItemCode)> FuelMap =
-            new(StringComparer.OrdinalIgnoreCase)
+        // แปลง fuel token ฝั่ง PocketBase (remark "FUE000x") -> item ของ ERP InsertArTransPriceList
+        // map ด้วย "เลข index" ท้าย token (รับได้ทั้ง "FUE0001" และ legacy "FUEL001")
+        // idx -> (item_type = ชื่อสินค้าใน ERP, item_code = รหัส ERP FG010101-00x):
+        //   1 = Diesel      (FUE0001 -> FG010101-001)
+        //   2 = Gasohol 91  (FUE0002 -> FG010101-002)
+        //   3 = Benzene 95  (FUE0003 -> FG010101-003)
+        private static readonly Dictionary<int, (string ItemType, string ItemCode)> FuelMap =
+            new()
         {
-            { "FUEL001", ("Diesel",     "FG010101-001") },
-            { "FUEL002", ("Benzene 91", "FG010101-002") },
-            { "FUEL003", ("Benzene 95", "FG010101-003") }
+            { 1, ("Diesel",     "FG010101-001") },
+            { 2, ("Gasohol 91", "FG010101-002") },
+            { 3, ("Benzene 95", "FG010101-003") }
         };
 
+        // "FUE0001" / "FUEL001" -> capture เลขท้าย (int.Parse ตัด 0 นำหน้าออกเอง)
         private static readonly Regex FuelTokenRegex =
-            new(@"FUEL\d{3}", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+            new(@"FUEL?(\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
         public static ArPriceListPayload MapArPriceList(TransactionAggregate t, DateTime now)
         {
@@ -355,10 +361,10 @@ namespace Worker.Mappers
                 return (null, null);
 
             var match = FuelTokenRegex.Match(remark);
-            if (!match.Success)
+            if (!match.Success || !int.TryParse(match.Groups[1].Value, out var idx))
                 return (null, null);
 
-            return FuelMap.TryGetValue(match.Value, out var pair)
+            return FuelMap.TryGetValue(idx, out var pair)
                 ? pair
                 : (null, null);
         }
