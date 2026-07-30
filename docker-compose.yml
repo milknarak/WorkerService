@@ -14,5 +14,5 @@ services:
       - AppSettings__ArPocketbaseUrl=https://e0878ac5-5342-4b73-90d8-e1ceb9b663ec.pocketbase.barbarian.ldrive.io
       - AppSettings__ApEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertApTransaction
       - AppSettings__ArEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertArTransaction
-      - AppSettings__ArPriceListEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertArTransPriceList
+      - AppSettings__ArPriceListEndpoint=https://erp.ptl.softsquaregroup.app/api/ErpApi/InsertArTransactionPriceList
       - AppSettings__IntervalMinutes=10
