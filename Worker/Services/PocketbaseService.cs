@@ -127,12 +127,35 @@ namespace Worker.Services
 
         public async Task<List<TransactionGroup>> GetPendingGroups(CancellationToken ct = default)
         {
-            using var res = await SendAsync(() => _http.GetAsync(
-                "/api/collections/transaction_groups/records?filter=sent_to_sap_at=null", ct), ct);
+            // PocketBase list API แบ่งหน้า default 30 records → ถ้า pending สะสมเกิน worker จะเห็นแค่หน้าแรก
+            // แล้ว group ที่เหลือไม่มีวันถูกหยิบมาทำ (starvation) → วนดึงทุกหน้าจนครบก่อน return
+            // sort=-created : ใหม่ไปเก่า (ใช้ system field 'created' ที่มีทุก collection — 'created_at' sort ไม่ได้ → 400)
+            // perPage=200 : ลดจำนวน round-trip
+            const int perPage = 200;
+            var groups = new List<TransactionGroup>();
+            var page = 1;
 
-            var result = await res.Content.ReadFromJsonAsync<PocketResponse<TransactionGroup>>(JsonHelper.Options, ct);
+            while (true)
+            {
+                ct.ThrowIfCancellationRequested();
 
-            return result?.items ?? new List<TransactionGroup>();
+                using var res = await SendAsync(() => _http.GetAsync(
+                    $"/api/collections/transaction_groups/records?filter=sent_to_sap_at=null&sort=-created&perPage={perPage}&page={page}", ct), ct);
+
+                var result = await res.Content.ReadFromJsonAsync<PocketResponse<TransactionGroup>>(JsonHelper.Options, ct);
+
+                if (result?.items == null || result.items.Count == 0)
+                    break;
+
+                groups.AddRange(result.items);
+
+                if (page >= result.totalPages)
+                    break;
+
+                page++;
+            }
+
+            return groups;
         }
 
         public async Task<ApTransactionRecord?> GetApTransaction(string groupId, CancellationToken ct = default)
