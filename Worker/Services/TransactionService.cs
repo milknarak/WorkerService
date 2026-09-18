@@ -74,5 +74,15 @@ namespace Worker.Services
         {
             await _pb.UpdateSentDate(id, ct);
         }
+
+        public async Task MarkAsSkipped(string id, string? message, CancellationToken ct = default)
+        {
+            await _pb.MarkAsSkipped(id, message, ct);
+        }
+
+        public async Task RecordFailure(string id, int retryTime, string? message, CancellationToken ct = default)
+        {
+            await _pb.UpdateFailure(id, retryTime, message, ct);
+        }
     }
 }

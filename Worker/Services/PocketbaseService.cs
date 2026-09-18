@@ -139,8 +139,9 @@ namespace Worker.Services
             {
                 ct.ThrowIfCancellationRequested();
 
+                // is_skipped=true : เคสที่ ERP ยืนยันว่าข้อมูลอยู่ในระบบแล้ว (duplicate) — กันไม่ให้วนส่งซ้ำไม่หยุด
                 using var res = await SendAsync(() => _http.GetAsync(
-                    $"/api/collections/transaction_groups/records?filter=sent_to_sap_at=null&sort=-created&perPage={perPage}&page={page}", ct), ct);
+                    $"/api/collections/transaction_groups/records?filter=(sent_to_sap_at=null%26%26is_skipped!=true)&sort=-created&perPage={perPage}&page={page}", ct), ct);
 
                 var result = await res.Content.ReadFromJsonAsync<PocketResponse<TransactionGroup>>(JsonHelper.Options, ct);
 
@@ -232,7 +233,40 @@ namespace Worker.Services
         {
             var payload = new
             {
-                sent_to_sap_at = _timeProvider.GetUtcNow().UtcDateTime
+                sent_to_sap_at = _timeProvider.GetUtcNow().UtcDateTime,
+                send_failed_message = (string?)null
+            };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/transaction_groups/records/{id}",
+                payload,
+                ct), ct);
+        }
+
+        // ERP ยืนยันว่าข้อมูลอยู่ในระบบแล้ว (duplicate) — flag ไว้ให้ GetPendingGroups ข้าม ไม่วนส่งซ้ำ
+        // ไม่แตะ sent_to_sap_at (สงวนความหมายไว้ว่า "worker ส่งสำเร็จเอง")
+        public async Task MarkAsSkipped(string id, string? message, CancellationToken ct = default)
+        {
+            var payload = new
+            {
+                is_skipped = true,
+                send_failed_message = message
+            };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/transaction_groups/records/{id}",
+                payload,
+                ct), ct);
+        }
+
+        // error อื่น (price list, exchange rate, งวด ฯลฯ) — บันทึกไว้ดูบนจอ แล้วปล่อยให้ retry รอบหน้า
+        // (auto-heal เมื่อ ERP แก้ข้อมูล — ไม่ cap เพราะไม่มีคน monitor คอย re-trigger)
+        public async Task UpdateFailure(string id, int retryTime, string? message, CancellationToken ct = default)
+        {
+            var payload = new
+            {
+                retry_time = retryTime,
+                send_failed_message = message
             };
 
             using var res = await SendAsync(() => _http.PatchAsJsonAsync(

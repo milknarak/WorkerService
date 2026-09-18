@@ -8,6 +8,9 @@ namespace Worker.Models
         public string type { get; set; }
         public string sub_type { get; set; }
         public string? sent_to_sap_at { get; set; }
+        public bool is_skipped { get; set; }
+        public int retry_time { get; set; }
+        public string? send_failed_message { get; set; }
         public DateTime created_at { get; set; }
         public DateTime updated_at { get; set; }
     }
