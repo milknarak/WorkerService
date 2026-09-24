@@ -42,7 +42,10 @@ namespace Worker.Mappers
             // upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub
             var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
 
-            var apTransaction = BuildApHeader(header, now, headerAmt);
+            // ถ้ามี sub_group_type = ap_debit_note ให้เป็น Credit Note (CN) นอกนั้นเป็น Invoice (IV)
+            var docType = subs.Any(s => s.sub_group_type == "ap_debit_note") ? "CN" : "IV";
+
+            var apTransaction = BuildApHeader(header, now, headerAmt, docType);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
             apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt);
@@ -50,7 +53,7 @@ namespace Worker.Mappers
             return new SapPayload { apTransaction = apTransaction };
         }
 
-        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt)
+        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt, string docType)
         {
             var today = now.Date;
 
@@ -59,7 +62,7 @@ namespace Worker.Mappers
                 ou_code = "PTL",
                 system_id = "API",
                 local_type = h.local_type,
-                doc_type = "IV",
+                doc_type = docType,
                 adjust_reason_code = "",
                 ap_code = h.vendor_code,
                 tran_date = today,
