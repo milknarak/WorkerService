@@ -22,6 +22,15 @@ namespace Worker.Mappers
             { "ap_debit_note",      ("1480.002", "7862.001") }
         };
 
+        // เจ้าหนี้คนละเจ้าตามประเภทงาน — override vendor_code ที่ส่งมาจาก upstream
+        //   ap_lab_test        (คุณภาพ)  -> V01003
+        //   ap_chemical_dosing (หยอดสาร) -> V01685
+        private static readonly Dictionary<string, string> VendorMap = new()
+        {
+            { "ap_lab_test",        "V01003" },
+            { "ap_chemical_dosing", "V01685" }
+        };
+
         public static SapPayload Map(TransactionAggregate t, TransactionType type, DateTime now)
         {
             return type switch
@@ -45,7 +54,10 @@ namespace Worker.Mappers
             // ถ้ามี sub_group_type = ap_debit_note ให้เป็น Credit Note (CN) นอกนั้นเป็น Invoice (IV)
             var docType = subs.Any(s => s.sub_group_type == "ap_debit_note") ? "CN" : "IV";
 
-            var apTransaction = BuildApHeader(header, now, headerAmt, docType);
+            // เจ้าหนี้คนละเจ้าตามประเภทงาน (คุณภาพ/หยอดสาร) — ไม่สนค่าที่ upstream ส่งมา
+            var apCode = ResolveVendor(subs) ?? header.vendor_code;
+
+            var apTransaction = BuildApHeader(header, now, headerAmt, docType, apCode);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
             apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt);
@@ -53,7 +65,7 @@ namespace Worker.Mappers
             return new SapPayload { apTransaction = apTransaction };
         }
 
-        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt, string docType)
+        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt, string docType, string apCode)
         {
             var today = now.Date;
 
@@ -64,7 +76,7 @@ namespace Worker.Mappers
                 local_type = h.local_type,
                 doc_type = docType,
                 adjust_reason_code = "",
-                ap_code = h.vendor_code,
+                ap_code = apCode,
                 tran_date = today,
                 credit_code = "",
                 due_date = h.due_date ?? today.AddDays(30),
@@ -166,6 +178,17 @@ namespace Worker.Mappers
                     total_amt = amount
                 }
             };
+        }
+
+        // หา vendor_code จากประเภท sub (เอาตัวแรกที่ map ได้) — คืน null ถ้าไม่มีใน VendorMap
+        private static string ResolveVendor(List<ApSubTransactionRecord> subs)
+        {
+            foreach (var s in subs)
+            {
+                if (VendorMap.TryGetValue(s.sub_group_type ?? "", out var code))
+                    return code;
+            }
+            return null;
         }
 
         private static (string Debit, string Credit) GetAccounts(string subGroupType)
