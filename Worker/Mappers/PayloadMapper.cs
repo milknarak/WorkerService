@@ -22,15 +22,6 @@ namespace Worker.Mappers
             { "ap_debit_note",      ("1480.002", "7862.001") }
         };
 
-        // เจ้าหนี้คนละเจ้าตามประเภทงาน — override vendor_code ที่ส่งมาจาก upstream
-        //   ap_lab_test        (คุณภาพ)  -> V01003
-        //   ap_chemical_dosing (หยอดสาร) -> V01685
-        private static readonly Dictionary<string, string> VendorMap = new()
-        {
-            { "ap_lab_test",        "V01003" },
-            { "ap_chemical_dosing", "V01685" }
-        };
-
         public static SapPayload Map(TransactionAggregate t, TransactionType type, DateTime now)
         {
             return type switch
@@ -52,12 +43,9 @@ namespace Worker.Mappers
             var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
 
             // ถ้ามี sub_group_type = ap_debit_note ให้เป็น Credit Note (CN) นอกนั้นเป็น Invoice (IV)
-            var docType = subs.Any(s => s.sub_group_type == "ap_debit_note") ? "CN" : "IV";
+            var docType = subs.Any(s => s.sub_group_type == AP_DEBIT_NOTE) ? "CN" : "IV";
 
-            // เจ้าหนี้คนละเจ้าตามประเภทงาน (คุณภาพ/หยอดสาร) — ไม่สนค่าที่ upstream ส่งมา
-            var apCode = ResolveVendor(subs) ?? header.vendor_code;
-
-            var apTransaction = BuildApHeader(header, now, headerAmt, docType, apCode);
+            var apTransaction = BuildApHeader(header, now, headerAmt, docType, header.vendor_code);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
             apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt);
@@ -117,41 +105,59 @@ namespace Worker.Mappers
             };
         }
 
+        private const string AP_DEBIT_NOTE = "ap_debit_note";
+
+        // ลงบัญชี AP 2 ตระกูล (อ้างอิงเอกสารจริง) — ส่ง acc_code เลขฐาน ERP ต่อ suffix (branch/fuel token/customer) เอง
+        //  A) ปกติ (ทุก sub ยกเว้น ap_debit_note): Debit แยกรายบรรทัดต่อ sub / Credit รวบยอดตาม "เลขบัญชี credit"
+        //     - ผสมหลาย sub_type ที่ credit เดียวกันก็รวมเป็นบรรทัดเดียว (เช่น ap_tax+ap_tax_okc+ap_tax_omp → 4370.001 รวม)
+        //     - ap_fuel ก็ตระกูลนี้: Debit 1370.001 ต่อน้ำมัน / Credit 4011.001 รวม
+        //  B) ap_debit_note (ลดหนี้ กลับด้าน): Debit รวบยอด (1480.002) / Credit แยกรายบรรทัดต่อ sub (7862.001)
+        //  ลำดับ: Debit ทุกบรรทัดก่อน แล้วค่อย Credit
         private static List<ApTransactionAcc> BuildApAccountingEntries(List<ApSubTransactionRecord> subs)
         {
-            var entries = new List<ApTransactionAcc>();
-            var seq = 1;
+            var debits = new List<ApTransactionAcc>();
+            var credits = new List<ApTransactionAcc>();
 
-            foreach (var s in subs)
+            var normalSubs = subs.Where(s => s.sub_group_type != AP_DEBIT_NOTE).ToList();
+            var debitNoteSubs = subs.Where(s => s.sub_group_type == AP_DEBIT_NOTE).ToList();
+
+            // ── ตระกูล A: Debit ต่อ sub / Credit รวบตามเลขบัญชี credit ──
+            foreach (var s in normalSubs)
             {
-                var (debit, credit) = GetAccounts(s.sub_group_type);
-                var remark = s.remark ?? "";
-
-                entries.Add(new ApTransactionAcc
-                {
-                    acc_seq = seq++,
-                    acc_code = debit,
-                    div_code = "PTL",
-                    ou_det = "00000",
-                    dr_amt = s.curr_amt,
-                    cr_amt = 0,
-                    remark = remark
-                });
-
-                entries.Add(new ApTransactionAcc
-                {
-                    acc_seq = seq++,
-                    acc_code = credit,
-                    div_code = "PTL",
-                    ou_det = "00000",
-                    dr_amt = 0,
-                    cr_amt = s.curr_amt,
-                    remark = remark
-                });
+                var (debit, _) = GetAccounts(s.sub_group_type);
+                debits.Add(Acc(debit, s.curr_amt, 0, s.remark));
             }
+            foreach (var g in normalSubs.GroupBy(s => GetAccounts(s.sub_group_type).Credit))
+                credits.Add(Acc(g.Key, 0, g.Sum(s => s.curr_amt ?? 0), ""));
+
+            // ── ตระกูล B (ap_debit_note): Debit รวบตามเลขบัญชี debit / Credit ต่อ sub ──
+            foreach (var g in debitNoteSubs.GroupBy(s => GetAccounts(s.sub_group_type).Debit))
+                debits.Add(Acc(g.Key, g.Sum(s => s.curr_amt ?? 0), 0, ""));
+            foreach (var s in debitNoteSubs)
+            {
+                var (_, credit) = GetAccounts(s.sub_group_type);
+                credits.Add(Acc(credit, 0, s.curr_amt, s.remark));
+            }
+
+            // Debit ทุกบรรทัดก่อน แล้ว Credit + ไล่ acc_seq 1..n
+            var entries = new List<ApTransactionAcc>(debits.Count + credits.Count);
+            entries.AddRange(debits);
+            entries.AddRange(credits);
+            for (var i = 0; i < entries.Count; i++)
+                entries[i].acc_seq = i + 1;
 
             return entries;
         }
+
+        private static ApTransactionAcc Acc(string accCode, decimal? dr, decimal? cr, string remark) => new()
+        {
+            acc_code = accCode,
+            div_code = "PTL",
+            ou_det = "00000",
+            dr_amt = dr,
+            cr_amt = cr,
+            remark = remark ?? ""
+        };
 
         private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today, string paymentName, decimal amount)
         {
@@ -178,17 +184,6 @@ namespace Worker.Mappers
                     total_amt = amount
                 }
             };
-        }
-
-        // หา vendor_code จากประเภท sub (เอาตัวแรกที่ map ได้) — คืน null ถ้าไม่มีใน VendorMap
-        private static string ResolveVendor(List<ApSubTransactionRecord> subs)
-        {
-            foreach (var s in subs)
-            {
-                if (VendorMap.TryGetValue(s.sub_group_type ?? "", out var code))
-                    return code;
-            }
-            return null;
         }
 
         private static (string Debit, string Credit) GetAccounts(string subGroupType)
