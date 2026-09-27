@@ -159,20 +159,22 @@ namespace Worker.Services
             return groups;
         }
 
-        public async Task<ApTransactionRecord?> GetApTransaction(string groupId, CancellationToken ct = default)
+        // 1 group มีได้หลาย ap_transaction → คืนทุกตัว (perPage สูงกัน default 30 ตัด)
+        public async Task<List<ApTransactionRecord>> GetApTransactions(string groupId, CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ap_transactions/records?filter=group_id='{groupId}'", ct), ct);
+                $"/api/collections/ap_transactions/records?filter=group_id='{groupId}'&perPage=200", ct), ct);
 
             var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApTransactionRecord>>(JsonHelper.Options, ct);
 
-            return result?.items?.FirstOrDefault();
+            return result?.items ?? new List<ApTransactionRecord>();
         }
 
-        public async Task<List<ApSubTransactionRecord>> GetApSubTransaction(string groupId, CancellationToken ct = default)
+        // sub ผูกด้วย transaction_id (ap_transactions.id) — ไม่ใช่ group_id อีกต่อไป
+        public async Task<List<ApSubTransactionRecord>> GetApSubTransaction(string transactionId, CancellationToken ct = default)
         {
             using var res = await SendAsync(() => _http.GetAsync(
-                $"/api/collections/ap_sub_transactions/records?filter=group_id='{groupId}'", ct), ct);
+                $"/api/collections/ap_sub_transactions/records?filter=transaction_id='{transactionId}'&perPage=200", ct), ct);
 
             var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApSubTransactionRecord>>(JsonHelper.Options, ct);
 
@@ -271,6 +273,52 @@ namespace Worker.Services
 
             using var res = await SendAsync(() => _http.PatchAsJsonAsync(
                 $"/api/collections/transaction_groups/records/{id}",
+                payload,
+                ct), ct);
+        }
+
+        // ── สถานะราย ap_transaction (id = ap_transactions.id) ─────────────────────────────
+        // ยิงสำเร็จ → แสตมป์รายตัว รอบหน้าจะข้ามไม่ยิงซ้ำ (idempotent ต่อให้ crash กลาง group)
+        public async Task UpdateApSentDate(string id, CancellationToken ct = default)
+        {
+            var payload = new
+            {
+                sent_to_sap_at = _timeProvider.GetUtcNow().UtcDateTime,
+                send_failed_message = (string?)null
+            };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/ap_transactions/records/{id}",
+                payload,
+                ct), ct);
+        }
+
+        // ERP ยืนยันว่า ap_transaction ตัวนี้อยู่ในระบบแล้ว (duplicate) — flag ข้าม ไม่วนยิงซ้ำ
+        public async Task MarkApSkipped(string id, string? message, CancellationToken ct = default)
+        {
+            var payload = new
+            {
+                is_skipped = true,
+                send_failed_message = message
+            };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/ap_transactions/records/{id}",
+                payload,
+                ct), ct);
+        }
+
+        // error อื่น — บันทึก retry แล้วปล่อยให้รอบหน้าลองใหม่ (group ยังไม่ครบ จึงยังถูกกวาดต่อ)
+        public async Task UpdateApFailure(string id, int retryTime, string? message, CancellationToken ct = default)
+        {
+            var payload = new
+            {
+                retry_time = retryTime,
+                send_failed_message = message
+            };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/ap_transactions/records/{id}",
                 payload,
                 ct), ct);
         }
