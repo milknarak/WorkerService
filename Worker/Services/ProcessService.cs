@@ -125,6 +125,20 @@ namespace Worker.Services
                         continue;
                     }
 
+                    // header curr_amt (จาก PKB) ต้องเท่าผลรวม sub เพราะ GL ลงจาก sub — ไม่เท่า = จะ imbalance ที่ ERP
+                    // stamp ข้อความไว้ให้เห็น แต่ไม่ยิง (payload พัง) และไม่ skip (เผื่อ upstream สร้าง record ใหม่ที่ถูกมาแทน)
+                    var subTotal = data.ApSubTransaction!.Sum(s => s.curr_amt ?? 0);
+                    if (ap.curr_amt.HasValue && Math.Abs(ap.curr_amt.Value - subTotal) > 0.005m)
+                    {
+                        var msg = $"header curr_amt {ap.curr_amt.Value} != sum sub {subTotal} (diff {ap.curr_amt.Value - subTotal}) — GL would not balance, not sent";
+                        await transactionService.StampApMessage(ap.id, msg, ct);
+                        _logger.LogWarning(
+                            "[{Instance}] ap_transaction {ApId} (group {GroupId}) header/sub mismatch — {Msg}",
+                            transactionService.Name, ap.id, g.group_id, msg);
+                        allDone = false;
+                        continue;
+                    }
+
                     var payload = PayloadMapper.Map(data, TransactionType.Ap, now);
                     var result = await _sapService.Send(payload, TransactionType.Ap, ct);
 

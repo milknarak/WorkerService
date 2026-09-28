@@ -322,5 +322,20 @@ namespace Worker.Services
                 payload,
                 ct), ct);
         }
+
+        // แสตมป์ข้อความอย่างเดียว ไม่แตะ sent/skip/retry — ใช้ตอนเจอ header ≠ ผลรวม sub
+        // (ไม่ skip เพื่อให้ยังเห็นใน queue ถ้า upstream สร้าง record ที่ถูกต้องมาใหม่ค่อยไหลต่อ)
+        public async Task StampApMessage(string id, string? message, CancellationToken ct = default)
+        {
+            var payload = new
+            {
+                send_failed_message = message
+            };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/ap_transactions/records/{id}",
+                payload,
+                ct), ct);
+        }
     }
 }

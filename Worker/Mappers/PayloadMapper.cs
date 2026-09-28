@@ -38,9 +38,9 @@ namespace Worker.Mappers
             var subs = t.ApSubTransaction ?? new List<ApSubTransactionRecord>();
             var today = now.Date;
 
-            // ลูกค้าลาว (LAK): ส่งเลขดิบ ให้ ERP แปลงค่าเงินเอง — local_amt = curr_amt
-            // upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub
-            var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
+            // ยอดหัว = ค่าจาก PKB (เป็น pre_curr_amt ด้วย) ถ้าไม่มีค่อยรวมจาก sub เอง
+            // upstream การันตี header curr_amt == ผลรวม sub (GL สร้างจาก sub) → ต้องเท่ากัน
+            var headerAmt = header.curr_amt ?? subs.Sum(s => s.curr_amt ?? 0);
 
             // ถ้ามี sub_group_type = ap_debit_note ให้เป็น Credit Note (CN) นอกนั้นเป็น Invoice (IV)
             var docType = subs.Any(s => s.sub_group_type == AP_DEBIT_NOTE) ? "CN" : "IV";
@@ -100,7 +100,7 @@ namespace Worker.Mappers
                 div_code = "PTL",
                 ou_det = "00000",
                 curr_amt = s.curr_amt,
-                local_amt = s.curr_amt,
+                local_amt = s.local_amt ?? s.curr_amt,   // ใช้ค่าจาก PKB ถ้าไม่มีค่อย fallback curr_amt
                 note = s.remark ?? ""
             };
         }

@@ -51,6 +51,7 @@ namespace Worker.Services
         public Task MarkApSent(string apId, CancellationToken ct = default) => _pb.UpdateApSentDate(apId, ct);
         public Task MarkApSkipped(string apId, string? message, CancellationToken ct = default) => _pb.MarkApSkipped(apId, message, ct);
         public Task RecordApFailure(string apId, int retryTime, string? message, CancellationToken ct = default) => _pb.UpdateApFailure(apId, retryTime, message, ct);
+        public Task StampApMessage(string apId, string? message, CancellationToken ct = default) => _pb.StampApMessage(apId, message, ct);
 
         // ── AR: ยังเป็น 1 group → 1 ar_transaction (คงเดิม) ──
         public async Task<TransactionAggregate?> GetTransaction(string groupId, TransactionType type, CancellationToken ct = default)
