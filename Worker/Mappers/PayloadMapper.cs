@@ -17,7 +17,7 @@ namespace Worker.Mappers
             { "ap_chemical_dosing", ("1342.012", "4370.001") },
             { "ap_lab_test",        ("1342.009", "4370.001") },
             { "ap_fuel",            ("1370.001", "4011.001") },
-            { "ap_transport",       ("1342.005", "4021.001") },
+            { "ap_transport",       ("1342.005", "4022.001") },
             { "ap_other",           ("1342.005", "4022.001") },
             { "ap_debit_note",      ("1480.002", "7862.001") }
         };
@@ -45,15 +45,22 @@ namespace Worker.Mappers
             // ถ้ามี sub_group_type = ap_debit_note ให้เป็น Credit Note (CN) นอกนั้นเป็น Invoice (IV)
             var docType = subs.Any(s => s.sub_group_type == AP_DEBIT_NOTE) ? "CN" : "IV";
 
-            var apTransaction = BuildApHeader(header, now, headerAmt, docType, header.vendor_code);
+            // ap_other ใช้ vendor เดียวกับ ap_transport และมาจาก ref_inv_no ใบเดียวกัน (เช่น 6809054)
+            // → คู่ (ap_code + ref_inv_no) ชนกัน ERP ห้ามซ้ำ → ใบที่ 2 เข้าไม่ได้
+            // เติม suffix ".1" ให้ ap_other เพื่อให้ unique (ตรงกับ voucher จริง: transport=6809054, other=6809054.1)
+            var refInvNo = subs.Any(s => s.sub_group_type == AP_OTHER)
+                ? $"{header.ref_inv_no}.1"
+                : header.ref_inv_no;
+
+            var apTransaction = BuildApHeader(header, now, headerAmt, docType, header.vendor_code, refInvNo);
             apTransaction.apSubTransaction = subs.Select(BuildApLineItem).ToList();
             apTransaction.apTransactionAcc = BuildApAccountingEntries(subs);
-            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt);
+            apTransaction.apTransactionPurcTax = BuildApPurcTax(header, today, t.Customer?.customer_name, headerAmt, refInvNo);
 
             return new SapPayload { apTransaction = apTransaction };
         }
 
-        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt, string docType, string apCode)
+        private static ApTransaction BuildApHeader(ApTransactionRecord h, DateTime now, decimal currAmt, string docType, string apCode, string refInvNo)
         {
             var today = now.Date;
 
@@ -68,7 +75,7 @@ namespace Worker.Mappers
                 tran_date = today,
                 credit_code = "",
                 due_date = h.due_date ?? today.AddDays(30),
-                ref_inv_no = h.ref_inv_no,
+                ref_inv_no = refInvNo,
                 ref_inv_date = h.ref_inv_date ?? today,
                 ref_doc_no = h.ref_doc_no,
                 ref_po_no = h.ref_po_no,
@@ -106,6 +113,7 @@ namespace Worker.Mappers
         }
 
         private const string AP_DEBIT_NOTE = "ap_debit_note";
+        private const string AP_OTHER = "ap_other";
 
         // ลงบัญชี AP 2 ตระกูล (อ้างอิงเอกสารจริง) — ส่ง acc_code เลขฐาน ERP ต่อ suffix (branch/fuel token/customer) เอง
         //  A) ปกติ (ทุก sub ยกเว้น ap_debit_note): Debit แยกรายบรรทัดต่อ sub / Credit รวบยอดตาม "เลขบัญชี credit"
@@ -159,7 +167,7 @@ namespace Worker.Mappers
             remark = remark ?? ""
         };
 
-        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today, string paymentName, decimal amount)
+        private static List<ApTransactionPurcTax> BuildApPurcTax(ApTransactionRecord h, DateTime today, string paymentName, decimal amount, string refInvNo)
         {
 
             return new List<ApTransactionPurcTax>
@@ -174,7 +182,7 @@ namespace Worker.Mappers
                     tax_status = "N",
                     purc_type = "IV",
                     purc_code = "P07-01",
-                    purc_tax_no = h.ref_inv_no,
+                    purc_tax_no = refInvNo,
                     purc_tax_date = h.ref_inv_date ?? today,
                     payment_name = paymentName ?? "",
                     gs_non_vat_amt = amount,
@@ -206,17 +214,16 @@ namespace Worker.Mappers
 
             // เหมือน AP: upstream เขียนยอดลงเฉพาะ sub, header curr_amt = ผลรวม sub (ยอดรวม incl VAT)
             var headerAmt = subs.Sum(s => s.curr_amt ?? 0);
-            // VAT รวม = ผลรวม VAT ต่อบรรทัด (คิดวิธีเดียวกับ GL เพื่อให้ยอดตรงกันเป๊ะ)
-            var totalVat = subs.Sum(s => CalcVat(s.curr_amt ?? 0));
+            // VAT รวมในหัว (vat_amt) ERP ไม่ต้องการ → ไม่ส่ง; บรรทัด 4320.001 ยังคิดเองใน BuildArAccountingEntries
 
-            var arTransaction = BuildArHeader(header, today, headerAmt, totalVat);
+            var arTransaction = BuildArHeader(header, today, headerAmt);
             arTransaction.arSubTransaction = subs.Select(BuildArLineItem).ToList();
             arTransaction.arTransactionAcc = BuildArAccountingEntries(headerAmt, subs);
 
             return new SapPayload { arTransaction = arTransaction };
         }
 
-        private static ArTransaction BuildArHeader(ArTransactionRecord h, DateTime today, decimal currAmt, decimal vatAmt)
+        private static ArTransaction BuildArHeader(ArTransactionRecord h, DateTime today, decimal currAmt)
         {
             return new ArTransaction
             {
@@ -233,7 +240,7 @@ namespace Worker.Mappers
                 exchange_rate = h.exchange_rate,
                 curr_amt = currAmt,
                 local_amt = currAmt,
-                vat_amt = vatAmt,
+                vat_amt = null,   // ERP ไม่ต้องการยอด VAT รวมในหัว (GL 4320.001 คิดแยกใน arTransactionAcc)
                 remark = "",
                 system_id = "AR",
                 branch_code = "00000",
