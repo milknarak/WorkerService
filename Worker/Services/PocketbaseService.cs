@@ -337,5 +337,38 @@ namespace Worker.Services
                 payload,
                 ct), ct);
         }
+
+        // ── ap_parameter (key/value) — ใช้เก็บ running no ของ ref_inv_no (ap_debit_note) ──
+        public async Task<ApParameterRecord?> GetApParameter(string parameterCode, CancellationToken ct = default)
+        {
+            using var res = await SendAsync(() => _http.GetAsync(
+                $"/api/collections/ap_parameter/records?filter=parameter_code='{parameterCode}'", ct), ct);
+
+            var result = await res.Content.ReadFromJsonAsync<PocketResponse<ApParameterRecord>>(JsonHelper.Options, ct);
+
+            return result?.items?.FirstOrDefault();
+        }
+
+        // เขียนเลขรันล่าสุด (IMIFYY/xxxxx) กลับลง description ของ ap_parameter
+        public async Task UpdateApParameterValue(string id, string value, CancellationToken ct = default)
+        {
+            var payload = new { description = value };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/ap_parameter/records/{id}",
+                payload,
+                ct), ct);
+        }
+
+        // แสตมป์ ref_inv_no ที่รันเองลงบน ap_transactions — ให้รอบ retry หยิบเลขเดิม (idempotent)
+        public async Task UpdateApRefInvNo(string id, string refInvNo, CancellationToken ct = default)
+        {
+            var payload = new { ref_inv_no = refInvNo };
+
+            using var res = await SendAsync(() => _http.PatchAsJsonAsync(
+                $"/api/collections/ap_transactions/records/{id}",
+                payload,
+                ct), ct);
+        }
     }
 }

@@ -139,6 +139,13 @@ namespace Worker.Services
                         continue;
                     }
 
+                    // ap_debit_note: ERP ไม่ส่งเลขอ้างอิงมา → รันเลข ref_inv_no เอง (IMIFYY/xxxxx) จาก ap_parameter
+                    // idempotent: มีเลขแล้ว (รอบ retry) ใช้ซ้ำ ไม่กินเลขใหม่ — ต้องทำก่อน Map เพราะ Map อ่าน header.ref_inv_no
+                    if (data.ApSubTransaction!.Any(s => s.sub_group_type == PayloadMapper.AP_DEBIT_NOTE))
+                    {
+                        data.ApTransaction.ref_inv_no = await transactionService.EnsureDebitNoteRefInvNo(ap, now, ct);
+                    }
+
                     var payload = PayloadMapper.Map(data, TransactionType.Ap, now);
                     var result = await _sapService.Send(payload, TransactionType.Ap, ct);
 

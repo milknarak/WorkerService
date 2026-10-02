@@ -112,7 +112,7 @@ namespace Worker.Mappers
             };
         }
 
-        private const string AP_DEBIT_NOTE = "ap_debit_note";
+        public const string AP_DEBIT_NOTE = "ap_debit_note";
         private const string AP_OTHER = "ap_other";
 
         // ลงบัญชี AP 2 ตระกูล (อ้างอิงเอกสารจริง) — ส่ง acc_code เลขฐาน ERP ต่อ suffix (branch/fuel token/customer) เอง
