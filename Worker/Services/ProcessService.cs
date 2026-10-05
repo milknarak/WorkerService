@@ -11,6 +11,10 @@ namespace Worker.Services
 {
     public class ProcessService
     {
+        // ยิงซ้ำได้ไม่เกินจำนวนนี้ แล้ว auto-skip — กัน error เชิงข้อมูล (เช่น ArCode not found)
+        // วนส่งไม่หยุดจน retry_time พุ่งเป็นพันๆ; ครบแล้ว flag skip ให้หลุดจากการกวาด
+        private const int MaxRetry = 10;
+
         private readonly IEnumerable<TransactionService> _transactionServices;
         private readonly SapService _sapService;
         private readonly TimeProvider _timeProvider;
@@ -167,10 +171,22 @@ namespace Worker.Services
                     }
 
                     // error อื่น → บันทึก retry รายตัว แล้วปล่อยให้รอบหน้าลองใหม่ (group ยังไม่ครบ จึงยังถูกกวาด)
-                    await transactionService.RecordApFailure(ap.id, ap.retry_time + 1, result.ErrorMessage, ct);
+                    var apRetry = ap.retry_time + 1;
+                    if (apRetry >= MaxRetry)
+                    {
+                        // ครบ cap → flag skip รายตัว (finalize แบบ skip) ให้ group แสตมป์ครบได้ ไม่วนยิงต่อ
+                        var capMsg = $"skipped after {apRetry} retries — {result.ErrorMessage}";
+                        await transactionService.MarkApSkipped(ap.id, capMsg, ct);
+                        _logger.LogWarning(
+                            "[{Instance}] ap_transaction {ApId} (group {GroupId}) skipped after {Retry} retries. {ErrMsg}",
+                            transactionService.Name, ap.id, g.group_id, apRetry, result.ErrorMessage);
+                        continue;
+                    }
+
+                    await transactionService.RecordApFailure(ap.id, apRetry, result.ErrorMessage, ct);
                     _logger.LogWarning(
                         "[{Instance}] Send failed for ap_transaction {ApId} (group {GroupId}) (retry {Retry}). {ErrMsg}",
-                        transactionService.Name, ap.id, g.group_id, ap.retry_time + 1, result.ErrorMessage);
+                        transactionService.Name, ap.id, g.group_id, apRetry, result.ErrorMessage);
                     allDone = false;
                 }
                 catch (Exception ex)
@@ -245,10 +261,22 @@ namespace Worker.Services
             }
 
             // error อื่น → บันทึก retry_time + ข้อความ แล้วปล่อยให้ retry รอบหน้า (auto-heal เมื่อ ERP แก้ข้อมูล)
-            await transactionService.RecordFailure(g.id, g.retry_time + 1, result.ErrorMessage, ct);
+            var retry = g.retry_time + 1;
+            if (retry >= MaxRetry)
+            {
+                // ครบ cap → flag skip ให้หลุดจากการกวาด ไม่วนส่งจน retry_time พุ่งเป็นพันๆ
+                var capMsg = $"skipped after {retry} retries — {result.ErrorMessage}";
+                await transactionService.MarkAsSkipped(g.id, capMsg, ct);
+                _logger.LogWarning(
+                    "[{Instance}] Group {GroupId} skipped after {Retry} retries. {ErrMsg}",
+                    transactionService.Name, g.group_id, retry, result.ErrorMessage);
+                return;
+            }
+
+            await transactionService.RecordFailure(g.id, retry, result.ErrorMessage, ct);
             _logger.LogWarning(
                 "[{Instance}] Send failed for group {GroupId} (retry {Retry}). {ErrMsg}",
-                transactionService.Name, g.group_id, g.retry_time + 1, result.ErrorMessage);
+                transactionService.Name, g.group_id, retry, result.ErrorMessage);
         }
     }
 }

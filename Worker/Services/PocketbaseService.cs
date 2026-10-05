@@ -262,7 +262,7 @@ namespace Worker.Services
         }
 
         // error อื่น (price list, exchange rate, งวด ฯลฯ) — บันทึกไว้ดูบนจอ แล้วปล่อยให้ retry รอบหน้า
-        // (auto-heal เมื่อ ERP แก้ข้อมูล — ไม่ cap เพราะไม่มีคน monitor คอย re-trigger)
+        // (auto-heal เมื่อ ERP แก้ข้อมูล; cap จำนวน retry อยู่ที่ ProcessService.MaxRetry ครบแล้ว auto-skip)
         public async Task UpdateFailure(string id, int retryTime, string? message, CancellationToken ct = default)
         {
             var payload = new
